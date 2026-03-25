@@ -32,22 +32,30 @@ def _register_flex_attention() -> str:
     """
     try:
         import transformers
-        from torch.nn.attention.flex_attention import flex_attention
+        from torch.nn.attention.flex_attention import (
+            create_block_mask,
+            flex_attention,
+        )
 
         _compiled_flex = torch.compile(flex_attention)
 
-        def flex_attention_with_sinks(module, query, key, value, attention_mask, scaling, dropout=0.0, **_):
+        def flex_attention_with_sinks(module, query, key, value, attention_mask, scaling, dropout=0.0, sliding_window=None, **_):
             N, H, L, E = query.shape
             _, G, S, _ = key.shape
-            key_expanded = key.repeat_interleave(H // G, dim=1)
-            value_expanded = value.repeat_interleave(H // G, dim=1)
-            # Append virtual sink token (zero K/V).
-            sink_k = torch.zeros(N, H, 1, E, device=key.device, dtype=key.dtype)
-            sink_v = torch.zeros(N, H, 1, E, device=value.device, dtype=value.dtype)
-            k_ext = torch.cat([key_expanded, sink_k], dim=2)
-            v_ext = torch.cat([value_expanded, sink_v], dim=2)
-            sinks = module.sinks  # [H]
-            max_kv_len = S  # includes padding when static_shapes=True
+
+            # Fix 1: Native GQA — pass K/V in original shape, let the kernel
+            # handle the GQA expansion instead of materializing 8x larger tensors.
+            sink_k = torch.zeros(N, G, 1, E, device=key.device, dtype=key.dtype)
+            sink_v = torch.zeros(N, G, 1, E, device=value.device, dtype=value.dtype)
+            k_ext = torch.cat([key, sink_k], dim=2)  # (N, G, S+1, E)
+            v_ext = torch.cat([value, sink_v], dim=2)  # (N, G, S+1, E)
+
+            sinks = module.sinks  # [H] — per query-head sink logits
+            kv_len = S  # position of virtual sink token
+
+            # Fix 2: Sliding window mask — GPT-OSS alternates full/sliding
+            # attention per layer; each call gets its own sliding_window value.
+            sw = sliding_window
 
             # Determine actual valid sequence length for masking.
             # When static_shapes=True, S == max_seq_len but only
@@ -58,16 +66,44 @@ def _register_flex_attention() -> str:
 
                 def score_mod(score, b, h, q_idx, kv_idx):
                     is_valid = kv_idx < current_seq_len
-                    is_sink = kv_idx == max_kv_len
+                    is_sink = kv_idx == kv_len
+                    if sw is not None:
+                        in_window = kv_idx >= (q_idx - sw)
+                        is_valid = is_valid & in_window
                     return torch.where(
                         is_valid, score, torch.where(is_sink, sinks[h], float("-inf"))
                     )
+
+                # Fix 3: Block mask for hardware-level block skipping.
+                def mask_mod(b, h, q_idx, kv_idx):
+                    is_valid = kv_idx < current_seq_len
+                    is_sink = kv_idx == kv_len
+                    if sw is not None:
+                        in_window = kv_idx >= (q_idx - sw)
+                        is_valid = is_valid & in_window
+                    return is_valid | is_sink
+
+                block_mask = create_block_mask(mask_mod, B=1, H=None, Q_LEN=L, KV_LEN=S + 1)
             else:
 
                 def score_mod(score, b, h, q_idx, kv_idx):
-                    return torch.where(kv_idx == max_kv_len, sinks[h], score)
+                    is_sink = kv_idx == kv_len
+                    if sw is not None:
+                        in_window = kv_idx >= (q_idx - sw)
+                        return torch.where(
+                            is_sink, sinks[h], torch.where(in_window, score, float("-inf"))
+                        )
+                    return torch.where(is_sink, sinks[h], score)
 
-            out = _compiled_flex(query, k_ext, v_ext, score_mod=score_mod, scale=scaling)
+                block_mask = None
+
+            out = _compiled_flex(
+                query, k_ext, v_ext,
+                score_mod=score_mod,
+                block_mask=block_mask,
+                scale=scaling,
+                enable_gqa=True,
+            )
             return out.transpose(1, 2).contiguous(), None
 
         transformers.AttentionInterface.register("flex", flex_attention_with_sinks)
