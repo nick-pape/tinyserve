@@ -167,6 +167,103 @@ def test_static_shapes_returns_full_tensors():
     assert cache.get_seq_length(0) == 6
 
 
+def test_cpu_storage_gpu_return():
+    cache = StaticKVCache(
+        max_seq_len=32, num_layers=1, num_kv_heads=2,
+        head_dim=4, device=torch.device("cpu"), dtype=torch.bfloat16,
+        storage_device=torch.device("cpu"),
+    )
+    k = torch.randn(1, 2, 5, 4, dtype=torch.bfloat16)
+    v = torch.randn(1, 2, 5, 4, dtype=torch.bfloat16)
+    k_out, v_out = cache.update(k, v, 0, {"cache_position": torch.arange(5)})
+    assert cache._k.device.type == "cpu"
+    assert cache._v.device.type == "cpu"
+    assert k_out.device.type == "cpu"
+    assert v_out.device.type == "cpu"
+    assert torch.equal(k_out, k)
+
+
+def test_cpu_storage_vram_bytes_zero():
+    cache = StaticKVCache(
+        max_seq_len=32, num_layers=1, num_kv_heads=2,
+        head_dim=4, device=torch.device("cpu"), dtype=torch.bfloat16,
+        storage_device=torch.device("cpu"),
+    )
+    assert cache.vram_bytes == 0
+
+
+def test_cpu_storage_sequential_decode():
+    cache = StaticKVCache(
+        max_seq_len=32, num_layers=1, num_kv_heads=2,
+        head_dim=4, device=torch.device("cpu"), dtype=torch.bfloat16,
+        storage_device=torch.device("cpu"),
+    )
+    k = torch.randn(1, 2, 5, 4, dtype=torch.bfloat16)
+    v = torch.randn(1, 2, 5, 4, dtype=torch.bfloat16)
+    cache.update(k, v, 0, {"cache_position": torch.arange(5)})
+    assert cache.get_seq_length(0) == 5
+
+    k1 = torch.randn(1, 2, 1, 4, dtype=torch.bfloat16)
+    v1 = torch.randn(1, 2, 1, 4, dtype=torch.bfloat16)
+    k_out, v_out = cache.update(k1, v1, 0, {"cache_position": torch.tensor([5])})
+    assert k_out.shape == (1, 2, 6, 4)
+    assert cache.get_seq_length(0) == 6
+
+
+def test_cpu_storage_fp8():
+    cache = StaticKVCache(
+        max_seq_len=16, num_layers=1, num_kv_heads=2,
+        head_dim=4, device=torch.device("cpu"), dtype=torch.float8_e4m3fn,
+        storage_device=torch.device("cpu"),
+    )
+    k = torch.randn(1, 2, 3, 4, dtype=torch.bfloat16)
+    v = torch.randn(1, 2, 3, 4, dtype=torch.bfloat16)
+    k_out, v_out = cache.update(k, v, 0, {"cache_position": torch.arange(3)})
+    assert cache._k.dtype == torch.float8_e4m3fn
+    assert k_out.dtype == torch.bfloat16
+    assert torch.allclose(k_out, k, atol=0.2)
+
+
+def test_cpu_storage_static_shapes():
+    cache = StaticKVCache(
+        max_seq_len=16, num_layers=1, num_kv_heads=2,
+        head_dim=4, device=torch.device("cpu"), dtype=torch.bfloat16,
+        storage_device=torch.device("cpu"), static_shapes=True,
+    )
+    k = torch.randn(1, 2, 3, 4, dtype=torch.bfloat16)
+    v = torch.randn(1, 2, 3, 4, dtype=torch.bfloat16)
+    k_out, v_out = cache.update(k, v, 0, {"cache_position": torch.arange(3)})
+    assert k_out.shape == (1, 2, 16, 4)
+    assert torch.equal(k_out[:, :, :3], k)
+
+
+def test_from_model_config_storage_device():
+    class FakeConfig:
+        num_hidden_layers = 2
+        num_key_value_heads = 4
+        num_attention_heads = 8
+        hidden_size = 64
+        head_dim = 8
+
+    cache = StaticKVCache.from_model_config(
+        FakeConfig(), max_seq_len=32, device="cpu", dtype=torch.bfloat16,
+        storage_device="cpu",
+    )
+    assert cache._storage_device == torch.device("cpu")
+    assert cache._compute_device == torch.device("cpu")
+    assert cache.vram_bytes == 0
+
+
+def test_default_storage_device_matches_device():
+    cache = StaticKVCache(
+        max_seq_len=16, num_layers=1, num_kv_heads=1,
+        head_dim=4, device=torch.device("cpu"), dtype=torch.bfloat16,
+    )
+    assert cache._storage_device == torch.device("cpu")
+    assert cache._compute_device == torch.device("cpu")
+    assert cache.vram_bytes == 0
+
+
 def test_static_shapes_default_off():
     cache = StaticKVCache(
         max_seq_len=32, num_layers=1, num_kv_heads=2,

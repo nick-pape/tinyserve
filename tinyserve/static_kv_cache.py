@@ -29,6 +29,7 @@ class StaticKVCache:
         device: torch.device,
         dtype: torch.dtype = torch.bfloat16,
         static_shapes: bool = False,
+        storage_device: torch.device | None = None,
     ):
         self.max_seq_len = max_seq_len
         self.num_layers = num_layers
@@ -37,6 +38,8 @@ class StaticKVCache:
         self._dtype = dtype
         self._compute_dtype = torch.bfloat16
         self._device = device
+        self._storage_device = storage_device or device
+        self._compute_device = device
         self.static_shapes = static_shapes
         self._k = torch.zeros(
             num_layers,
@@ -45,7 +48,7 @@ class StaticKVCache:
             max_seq_len,
             head_dim,
             dtype=dtype,
-            device=device,
+            device=self._storage_device,
         )
         self._v = torch.zeros(
             num_layers,
@@ -54,13 +57,16 @@ class StaticKVCache:
             max_seq_len,
             head_dim,
             dtype=dtype,
-            device=device,
+            device=self._storage_device,
         )
+        if self._storage_device != self._compute_device and self._storage_device == torch.device("cpu"):
+            self._k = self._k.pin_memory()
+            self._v = self._v.pin_memory()
         self._seq_lens = [0] * num_layers
         self.is_sliding = [False] * num_layers
 
     @classmethod
-    def from_model_config(cls, config, max_seq_len=4096, device="cuda", dtype=torch.bfloat16):
+    def from_model_config(cls, config, max_seq_len=4096, device="cuda", dtype=torch.bfloat16, storage_device=None):
         effective = getattr(config, "text_config", config)
         head_dim = getattr(effective, "head_dim", None)
         if head_dim is None:
@@ -72,6 +78,7 @@ class StaticKVCache:
             head_dim=head_dim,
             device=torch.device(device),
             dtype=dtype,
+            storage_device=torch.device(storage_device) if storage_device is not None else None,
         )
 
     @staticmethod
@@ -81,6 +88,8 @@ class StaticKVCache:
 
     @property
     def vram_bytes(self):
+        if self._storage_device == torch.device("cpu"):
+            return 0
         return self._k.nelement() * self._k.element_size() * 2
 
     def update(self, key_states, value_states, layer_idx, cache_kwargs=None):
@@ -97,12 +106,17 @@ class StaticKVCache:
             raise RuntimeError(
                 f"KV cache overflow: {end} > {self.max_seq_len}. Increase max_seq_len or reduce context."
             )
+        store_val_k = key_states
+        store_val_v = value_states
         if self._dtype != self._compute_dtype:
-            self._k[layer_idx, :, :, start:end] = key_states.to(self._dtype)
-            self._v[layer_idx, :, :, start:end] = value_states.to(self._dtype)
+            store_val_k = store_val_k.to(self._dtype)
+            store_val_v = store_val_v.to(self._dtype)
+        if self._storage_device != self._compute_device:
+            self._k[layer_idx, :, :, start:end] = store_val_k.to(self._storage_device)
+            self._v[layer_idx, :, :, start:end] = store_val_v.to(self._storage_device)
         else:
-            self._k[layer_idx, :, :, start:end] = key_states
-            self._v[layer_idx, :, :, start:end] = value_states
+            self._k[layer_idx, :, :, start:end] = store_val_k
+            self._v[layer_idx, :, :, start:end] = store_val_v
         self._seq_lens[layer_idx] = max(self._seq_lens[layer_idx], end)
         if self.static_shapes:
             k_out = self._k[layer_idx, :, :, : self.max_seq_len]
@@ -110,8 +124,13 @@ class StaticKVCache:
         else:
             k_out = self._k[layer_idx, :, :, : self._seq_lens[layer_idx]]
             v_out = self._v[layer_idx, :, :, : self._seq_lens[layer_idx]]
-        if self._dtype != self._compute_dtype:
-            return k_out.to(self._compute_dtype), v_out.to(self._compute_dtype)
+        needs_device_transfer = self._storage_device != self._compute_device
+        needs_dtype_cast = self._dtype != self._compute_dtype
+        if needs_device_transfer or needs_dtype_cast:
+            target_dtype = self._compute_dtype if needs_dtype_cast else None
+            non_blocking = self._storage_device == torch.device("cpu") and needs_device_transfer
+            k_out = k_out.to(device=self._compute_device, dtype=target_dtype, non_blocking=non_blocking)
+            v_out = v_out.to(device=self._compute_device, dtype=target_dtype, non_blocking=non_blocking)
         return k_out, v_out
 
     def get_seq_length(self, layer_idx=0):

@@ -149,6 +149,7 @@ def offload_model(
     attn_implementation: str | None = None,
     disk_offload: bool = False,
     ram_cache_gb: float = 0,
+    kv_offload: bool = False,
 ) -> torch.nn.Module:
     """Offload MoE experts from an HF model to CPU with GPU LRU cache.
 
@@ -165,6 +166,9 @@ def offload_model(
             Non-expert weights remain as loaded in ``model``.
         cache_policy: eviction policy for the expert cache ('lru', 'slru',
             'lfu', 'lfru', 'fifo', 'ls', or 'dali'). Default 'lfru'.
+        kv_offload: store KV cache on CPU pinned memory (zero VRAM).
+            All VRAM goes to expert cache. PCIe transfer (~0.25ms at 1K ctx)
+            is hidden behind expert compute (~5ms/layer).
 
     Returns:
         The same model object with experts offloaded. Call model(input_ids)
@@ -225,7 +229,8 @@ def offload_model(
     kv_vram = 0
     use_flex = attn_implementation == "flex"
     if max_seq_len > 0:
-        kv_cache = StaticKVCache.from_model_config(config, max_seq_len=max_seq_len, device=device, dtype=kv_dtype)
+        storage_device = "cpu" if kv_offload else None
+        kv_cache = StaticKVCache.from_model_config(config, max_seq_len=max_seq_len, device=device, dtype=kv_dtype, storage_device=storage_device)
         if use_flex:
             kv_cache.static_shapes = True
         kv_vram = kv_cache.vram_bytes
@@ -289,6 +294,7 @@ def load_and_offload(
     gpu_memory_utilization: float = 0.90,
     disk_offload: bool = False,
     ram_cache_gb: float = 0,
+    kv_offload: bool = False,
     **hf_kwargs,
 ) -> torch.nn.Module:
     """Load a HuggingFace MoE model and immediately offload its experts.
@@ -343,4 +349,5 @@ def load_and_offload(
         attn_implementation=attn_impl,
         disk_offload=disk_offload,
         ram_cache_gb=ram_cache_gb,
+        kv_offload=kv_offload,
     )
