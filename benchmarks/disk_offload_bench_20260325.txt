@@ -1,0 +1,19 @@
+=== Disk Offload Benchmark (all optimizations) ===
+GPU: NVIDIA RTX PRO 2000 Blackwell Generation Laptop GPU
+VRAM: 8.0 GB free
+RAM: 63.1 GB available
+Loading with disk_offload=True...
+GPU slots: 239, RAM slots: 600
+VRAM free: 975 MB
+RAM available: 53.6 GB
+Warmup (filling RAM cache)...
+Warmup: 62.4s
+RAM cache: 460/600 slots filled, HR=48.8%
+   phase   ctx  gen   tok/s   HR%
+-----------------------------------
+ warm-10     5   10    0.7   61%
+ warm-40     4   40    4.9   59%
+ ctx-100    67   20    3.6   89%
+ ctx-500   339   20    1.7   96%
+  ctx-1K  1024   20    0.8   99%
+Done.

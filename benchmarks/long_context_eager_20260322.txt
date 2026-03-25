@@ -1,0 +1,2 @@
+=== Long Context: openai/gpt-oss-20b (FlexAttention + FP8 KV) ===
+GPU: NVIDIA RTX PRO 2000 Blackwell Generation Laptop GPU

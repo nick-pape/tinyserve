@@ -1,0 +1,28 @@
+[09:45:25] === DEBUG BENCHMARK START ===
+[09:45:25] Step 1: Environment
+[09:45:26]   torch: 2.10.0+cu128
+[09:45:26]   CUDA available: True
+[09:45:26]   GPU: NVIDIA RTX PRO 2000 Blackwell Generation Laptop GPU
+[09:45:26]   VRAM: 8.0 / 8.1 GB free
+[09:45:26]   GPU processes: 18931, python3, 100 MiB
+[09:45:27]   RAM: 63.8 / 66.8 GB available
+[09:45:27] Step 2: Import tinyserve
+[09:45:30]   OK
+[09:45:30] Step 3: Load model (eager, no KV, gpu_util=0.85)
+[09:46:26]   Loaded in 56.0s
+[09:46:26]   Expert slots: 238
+[09:46:26]   VRAM free after load: 0.97 GB
+[09:46:28] Step 4: Short decode (10 tokens)
+[09:46:30]   10 tok in 2.46s = 4.1 tok/s, HR=58%
+[09:46:30]   Output:  Paris."
+
+Sure! Here's a simple example of
+[09:46:30] Step 5: Warm cache decode (40 tokens)
+[09:46:38]   40 tok in 4.90s = 8.2 tok/s, HR=66%
+[09:46:38] Step 6: Context scaling (eager attention)
+[09:46:41]   ctx=   50: 10 tok, 3.2 tok/s, HR=88%, VRAM_free=927MB
+[09:46:48]   ctx=  200: 10 tok, 1.4 tok/s, HR=96%, VRAM_free=900MB
+[09:47:03]   ctx=  500: 10 tok, 0.7 tok/s, HR=99%, VRAM_free=782MB
+[09:47:30]   ctx= 1000: 10 tok, 0.4 tok/s, HR=99%, VRAM_free=367MB
+[09:47:30] Step 7: FlexAttention test
+[09:47:30]   Loading with attn_implementation='flex', max_seq_len=4096, FP8 KV...
