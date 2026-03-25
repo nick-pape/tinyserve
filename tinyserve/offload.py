@@ -83,7 +83,10 @@ def _register_flex_attention() -> str:
                         is_valid = is_valid & in_window
                     return is_valid | is_sink
 
-                block_mask = create_block_mask(mask_mod, B=1, H=None, Q_LEN=L, KV_LEN=S + 1)
+                # block_mask disabled: create_block_mask triggers torch.compile
+                # recompilation per shape, causing VRAM OOM on small GPUs.
+                # TODO: cache block_mask per (seq_len, sliding_window) pair.
+                block_mask = None
             else:
 
                 def score_mod(score, b, h, q_idx, kv_idx):
