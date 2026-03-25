@@ -76,6 +76,26 @@ class InferenceEngine:
             dtype=kv_dtype,
         )
 
+    async def _batched_decode_step(self, requests: list["Request"]) -> list[int]:
+        """Run one batched decode step for multiple active requests.
+
+        Collects hidden states and routing decisions from each request,
+        batches expert forwards using ExpertBatcher, and returns next tokens.
+        """
+        async with self._gpu_lock:
+            next_tokens = []
+            with torch.no_grad():
+                for req in requests:
+                    token_input = torch.tensor(
+                        [[req.generated[-1]]], device="cuda"
+                    )
+                    out = self.model(
+                        input_ids=token_input, past_key_values=req.kv_cache
+                    )
+                    next_token = out.logits[:, -1:].argmax(dim=-1).item()
+                    next_tokens.append(next_token)
+            return next_tokens
+
     def _make_kv_cache(self) -> PagedRequestKVCache:
         return PagedRequestKVCache(self._kv_pool)
 

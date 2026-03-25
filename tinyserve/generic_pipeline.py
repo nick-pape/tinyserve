@@ -428,6 +428,21 @@ class GenericExpertPipeline:
                 buf_done[buf_idx] = torch.cuda.Event()
                 buf_done[buf_idx].record(self.compute_stream)
 
+    def execute_batched_experts(
+        self,
+        items: "list[BatchItem]",
+        layer_idx: int,
+    ) -> "list[torch.Tensor]":
+        """Execute expert forwards for multiple requests with expert-level batching.
+
+        Delegates to ExpertBatcher for grouping by expert_id, loading once,
+        batching hidden states, and scattering weighted results.
+        """
+        from .expert_batcher import ExpertBatcher
+
+        batcher = ExpertBatcher(self)
+        return batcher.batch_execute(items, layer_idx)
+
     def schedule_prefetch(self, layer_idx: int, expert_ids: "list[int] | torch.Tensor") -> None:
         """Pre-load predicted experts into the VRAM cache for the next token.
 
