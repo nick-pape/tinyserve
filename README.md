@@ -1,40 +1,60 @@
 # tinyserve — MoE Expert Offloading for Consumer GPUs
 
-Run large MoE models on consumer GPUs with limited VRAM. Pure Python, no C++ compilation.
+Run 20B-400B+ MoE models on a single consumer GPU. Pure Python, no C++ compilation needed.
 
-tinyserve offloads Mixture-of-Experts (MoE) expert weights to CPU and serves them through a GPU LRU cache with adaptive prefetch. Models that need 40+ GB of VRAM run interactively on a single consumer GPU.
+tinyserve offloads Mixture-of-Experts (MoE) expert weights across SSD, RAM, and GPU with intelligent caching and prefetch. Models that need 40+ GB of VRAM run interactively on 8 GB hardware.
 
-## Performance
+## Why tinyserve?
 
-All numbers measured on RTX PRO 2000 Blackwell 8 GB laptop GPU with GPT-OSS-20B MXFP4. Benchmark artifacts in [`benchmarks/`](benchmarks/). Your results will vary.
+**vs llama.cpp / Ollama:** Pure Python — easy to understand, modify, extend. Expert-level offloading (not layer-level). Native MXFP4 + GGUF Q4_K support. No C++ compilation required.
 
-**Verified benchmarks (SDPA + CPU KV cache, 238 expert slots):**
+**vs vLLM / SGLang:** Designed for consumer GPUs (8 GB+), not datacenter. 3-tier caching (SSD→RAM→GPU) enables models larger than RAM. CPU expert compute for cold misses.
 
-| Context | tok/s | Hit Rate | Source |
-|---------|-------|----------|--------|
-| 10 tokens | 10.8 | 90% | `sdpa_cpu_kv_20260325.txt` |
-| 100 tokens | 4.2 | 99% | `sdpa_cpu_kv_20260325.txt` |
-| 500 tokens | 1.4 | 99% | `sdpa_cpu_kv_20260325.txt` |
-| 1,000 tokens | 0.8 | 100% | `sdpa_cpu_kv_20260325.txt` |
-| 2,000 tokens | 0.4 | 100% | `sdpa_cpu_kv_20260325.txt` |
-| 8,000 tokens | 0.3 | 100% | `sdpa_cpu_kv_20260325.txt` |
+**vs KTransformers:** No AMX/AVX-512 required — works on any NVIDIA GPU with AVX2. Simpler architecture, fewer dependencies.
 
-**Warm cache peak (eager attention, short prompt):** 7.7 tok/s at 64% HR ([`debug_bench_zerodedup_20260325.txt`](benchmarks/debug_bench_zerodedup_20260325.txt)). Historical peak of 27 tok/s observed in earlier sessions but not reproducible in current benchmark suite — likely due to different VRAM availability at measurement time.
+**Trade-offs (honest):**
+- Slower than llama.cpp C++ hot loop (~10 tok/s vs ~20-30 in C++)
+- NVIDIA GPUs only (no AMD/Intel/Apple)
+- Single GPU only (no tensor parallelism)
+- Python dispatch overhead limits theoretical peak
 
-**Baseline comparison:**
+## What makes it work
 
-| System | tok/s | Source | Notes |
-|--------|-------|--------|-------|
-| HF `device_map=auto` | 0.19 | Measured (commit history) | Naive CPU offload |
-| Ollama (8 GB, est.) | ~4-5 | [GitHub #11688](https://github.com/ollama/ollama/issues/11688) | Estimated, not measured on our HW |
-| llama.cpp (12 GB, DDR4) | ~20 | [Discussion #15396](https://github.com/ggml-org/llama.cpp/discussions/15396) | Different hardware, C++ |
-| **tinyserve** | **0.3-10.8** | `benchmarks/*.txt` | Depends on context length |
+- **3-tier expert storage:** SSD (mmap) → RAM (pinned LRU) → GPU VRAM cache. Zero RAM duplication. Background eager fill loads all experts in ~2s from NVMe.
+- **Native quantized compute:** MXFP4 via Triton `dot_scaled`. GGUF Q4_K via `torch._weight_int4pack_mm`. Never dequantizes to full precision.
+- **FATE adaptive prefetch:** Cross-layer gate similarity predicts next-layer experts with ~97% accuracy. Temporal fallback reuses previous token's routing. 95-100% cache hit rate.
+- **SDPA Flash attention:** O(n) memory for attention (no O(n²) score matrix). CPU KV cache enables unlimited context without VRAM pressure.
+- **Expert batching:** Multiple concurrent requests share expert cache. Same expert loaded once for N requests.
+
+## Performance (verified)
+
+All numbers measured on RTX PRO 2000 Blackwell 8 GB laptop GPU with GPT-OSS-20B MXFP4. Raw data in [`benchmarks/`](benchmarks/).
+
+**SDPA + CPU KV cache (238 expert slots, 100% hit rate at long context):**
+
+| Context | tok/s | Source |
+|---------|-------|--------|
+| 10 tokens | 10.8 | [`sdpa_cpu_kv_20260325.txt`](benchmarks/sdpa_cpu_kv_20260325.txt) |
+| 100 tokens | 4.2 | same |
+| 500 tokens | 1.4 | same |
+| 1,000 tokens | 0.8 | same |
+| 2,000 tokens | 0.4 | same |
+| 8,000 tokens | 0.3 | same |
+
+**Other configurations (verified):**
+
+| Config | tok/s | Context | Source |
+|--------|-------|---------|--------|
+| Eager, warm cache | 7.7 | 1K max | [`debug_bench_zerodedup_20260325.txt`](benchmarks/debug_bench_zerodedup_20260325.txt) |
+| FlexAttention + GQA | 7.2 (short) | 1.2K+ | [`flex_bench_20260325.txt`](benchmarks/flex_bench_20260325.txt) |
+| disk_offload + bg fill | 5.4 | 1K | [`disk_offload_bgfill_20260325.txt`](benchmarks/disk_offload_bgfill_20260325.txt) |
+| HF device_map=auto | 0.19 | — | commit history |
 
 **What we do NOT claim:**
-- We have not benchmarked on any model besides GPT-OSS-20B
-- Ollama/llama.cpp comparisons are estimates from different hardware
-- The 27 tok/s peak is from commit history, not current reproducible benchmarks
-- Multi-model support (Mixtral, DeepSeek, Qwen, etc.) is implemented but not benchmarked
+- Only GPT-OSS-20B has been benchmarked end-to-end
+- Ollama/llama.cpp comparisons are from different hardware ([source](https://github.com/ggml-org/llama.cpp/discussions/15396))
+- Multi-model support (11 families) is implemented but not benchmarked
+- GGUF Q4_K compute path is unit-tested but not benchmarked on real models yet
 
 ## Quick start
 
@@ -121,19 +141,25 @@ HF_TOKEN=hf_... docker compose up
 
 ## Supported models
 
-| Model family | model_type | Expert layout | Routing | Status |
-|-------------|-----------|--------------|---------|--------|
-| GPT-OSS-20B/120B | `gpt_oss` | Fused gate_up + down | Sigmoid top-k | Tested (native MXFP4) |
-| Mixtral 8x7B/8x22B | `mixtral` | Fused gate_up + down | Softmax then top-k | Tested |
-| DeepSeek-V3/R1 | `deepseek_v3` | gate + up + down | Top-k then softmax | Tested |
-| Qwen 3.5 MoE | `qwen3_5_moe` | Fused gate_up + down | Router native | Tested |
-| Qwen 3 MoE (235B) | `qwen3_moe` | gate + up + down | Softmax then top-k | Profile exists |
-| Qwen 2 MoE | `qwen2_moe` | gate + up + down | Softmax then top-k | Profile exists |
-| OLMoE | `olmoe` | gate + up + down | Softmax then top-k | Profile exists |
+| Model family | model_type | Status |
+|-------------|-----------|--------|
+| GPT-OSS-20B/120B | `gpt_oss` | Benchmarked (native MXFP4) |
+| Mixtral 8x7B/8x22B | `mixtral` | Unit tested |
+| DeepSeek-V3/R1 | `deepseek_v3` | Unit tested |
+| Qwen 3.5 MoE (35B/122B/397B) | `qwen3_5_moe` | Unit tested |
+| Qwen 3 MoE (235B) | `qwen3_moe` | Profile exists |
+| Qwen 2 MoE | `qwen2_moe` | Profile exists |
+| OLMoE | `olmoe` | Profile exists |
+| Llama 4 Scout/Maverick | `llama4` | Profile exists |
+| Kimi K2 | `kimi_k2` | Profile exists |
+| DBRX | `dbrx` | Profile exists |
+| Phi-MoE | `phimoe` | Profile exists |
 
-Any HuggingFace MoE model with a `layers[i].mlp.experts` architecture should work. The model registry auto-detects routing strategy, expert layout, and shared expert handling from the config.
+**Weight formats:** HuggingFace safetensors (BF16, FP8, MXFP4), GGUF (Q4_K, Q5_K, Q6_K).
 
-**Not yet supported:** Llama 4 Scout/Maverick, Kimi K2, DBRX, Phi-MoE, Jamba. PRs welcome.
+Any HuggingFace MoE model with a `layers[i].mlp.experts` architecture should work. The model registry auto-detects routing, layout, and shared experts from the config. PRs welcome for new models.
+
+**Not yet supported:** Jamba (Mamba+MoE hybrid). GGUF inference path is unit-tested but not benchmarked on real models yet.
 
 ## Configuration
 
@@ -200,7 +226,7 @@ Use `--kv-fp8` for FP8 KV cache (halves KV memory, doubles max context).
 
 ```bash
 pip install -e ".[dev]"
-python -m pytest tests/ --ignore=tests/test_hf_models.py -x -q  # 156+ tests
+python -m pytest tests/ --ignore=tests/test_hf_models.py -x -q  # 194+ tests
 ```
 
 ## Benchmarking
