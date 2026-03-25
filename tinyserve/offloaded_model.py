@@ -191,10 +191,13 @@ class OffloadedModel(nn.Module):
                     if param.dtype.is_floating_point:
                         param.data = param.data.to(torch.bfloat16)
             # Zero expert params in the (dequantized) model — they're not needed.
+            # Frees ~8 GB of BF16 expert weights that HF loaded unnecessarily.
             for _, layer in moe_layers:
                 container = getattr(getattr(layer, moe_block_attr), expert_list_attr)
                 for param in container.parameters():
                     param.data = torch.empty(0, device="cpu")
+            import gc
+            gc.collect()
         else:
             # Standard path: extract weights from the model's current parameters.
             template = _make_template(first_container, device)
