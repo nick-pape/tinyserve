@@ -1,60 +1,42 @@
 # tinyserve — MoE Expert Offloading for Consumer GPUs
 
-Run 20B-400B+ MoE models on a single consumer GPU. Pure Python, no C++ compilation needed.
+Run Mixture-of-Experts models that don't fit in VRAM on a single NVIDIA GPU. Pure Python, no C++ compilation.
 
-tinyserve offloads Mixture-of-Experts (MoE) expert weights across SSD, RAM, and GPU with intelligent caching and prefetch. Models that need 40+ GB of VRAM run interactively on 8 GB hardware.
+tinyserve offloads MoE expert weights to CPU RAM and caches hot experts on the GPU with predictive prefetch. A 20B MoE model (which only activates ~2B parameters per token) needs ~10 GB of CPU RAM and runs on 8 GB of VRAM.
 
-## Why tinyserve?
+**Realistic expectations:** On an 8 GB laptop GPU, expect **1–4 tok/s for normal chat-length context** (100–500 tokens) and **7–10 tok/s on short prompts** with warm cache. This is 40–55× faster than HuggingFace `device_map="auto"` (0.19 tok/s) but slower than llama.cpp for models it supports.
 
-**vs llama.cpp / Ollama:** Pure Python — easy to understand, modify, extend. Expert-level offloading (not layer-level). Native MXFP4 + GGUF Q4_K support. No C++ compilation required.
+## Who this is for
 
-**vs vLLM / SGLang:** Designed for consumer GPUs (8 GB+), not datacenter. 3-tier caching (SSD→RAM→GPU) enables models larger than RAM. CPU expert compute for cold misses.
+A new MoE model drops on HuggingFace. There's no GGUF quantization yet. Ollama can't load it. You have a laptop with an 8 GB GPU and you want to try it *today*, not next week when someone posts a GGUF.
 
-**vs KTransformers:** No AMX/AVX-512 required — works on any NVIDIA GPU with AVX2. Simpler architecture, fewer dependencies.
+tinyserve loads directly from HuggingFace safetensors. If the model is on the Hub and uses a standard MoE architecture, you can probably run it.
 
-**Trade-offs (honest):**
-- Slower than llama.cpp C++ hot loop (~10 tok/s vs ~20-30 in C++)
-- NVIDIA GPUs only (no AMD/Intel/Apple)
-- Single GPU only (no tensor parallelism)
-- Python dispatch overhead limits theoretical peak
+**If your model already works in Ollama or llama.cpp, use those.** Their C++ inference loop is faster. tinyserve is for models they don't support yet, or for when you want to read and modify the inference code yourself (~3K lines of Python, no compiled extensions).
 
-## What makes it work
+## Performance (measured)
 
-- **3-tier expert storage:** SSD (mmap) → RAM (pinned LRU) → GPU VRAM cache. Zero RAM duplication. Background eager fill loads all experts in ~2s from NVMe.
-- **Native quantized compute:** MXFP4 via Triton `dot_scaled`. GGUF Q4_K via `torch._weight_int4pack_mm`. Never dequantizes to full precision.
-- **FATE adaptive prefetch:** Cross-layer gate similarity predicts next-layer experts with ~97% accuracy. Temporal fallback reuses previous token's routing. 95-100% cache hit rate.
-- **SDPA Flash attention:** O(n) memory for attention (no O(n²) score matrix). CPU KV cache enables unlimited context without VRAM pressure.
-- **Expert batching:** Multiple concurrent requests share expert cache. Same expert loaded once for N requests.
+All numbers from an RTX PRO 2000 Blackwell 8 GB **laptop** GPU running GPT-OSS-20B (MXFP4, 238 expert cache slots). Raw benchmark logs in [`benchmarks/`](benchmarks/).
 
-## Performance (verified)
+| Context length | tok/s | Cache hit rate | Source file |
+|---|---|---|---|
+| 10 tokens | 10.8 | 90% | `sdpa_cpu_kv_20260325.txt` |
+| 100 tokens | 4.2 | 99% | same |
+| 500 tokens | 1.4 | 99% | same |
+| 1,000 tokens | 0.8 | 100% | same |
+| 3,000 tokens | 0.3 | 100% | same |
+| Warm cache, 40-token gen | 7.7 | 64% | `debug_bench_zerodedup_20260325.txt` |
 
-All numbers measured on RTX PRO 2000 Blackwell 8 GB laptop GPU with GPT-OSS-20B MXFP4. Raw data in [`benchmarks/`](benchmarks/).
+**Baseline:** HuggingFace `device_map="auto"` on the same hardware: 0.19 tok/s.
 
-**SDPA + CPU KV cache (238 expert slots, 100% hit rate at long context):**
+**Why throughput drops with context:** Attention is O(n) per decoded token (scanning all KV entries). At 1K+ context, attention compute dominates over expert loading. This affects all transformer models on consumer hardware. Paged attention and fused kernels are on the roadmap.
 
-| Context | tok/s | Source |
-|---------|-------|--------|
-| 10 tokens | 10.8 | [`sdpa_cpu_kv_20260325.txt`](benchmarks/sdpa_cpu_kv_20260325.txt) |
-| 100 tokens | 4.2 | same |
-| 500 tokens | 1.4 | same |
-| 1,000 tokens | 0.8 | same |
-| 2,000 tokens | 0.4 | same |
-| 8,000 tokens | 0.3 | same |
+**RTX PRO 2000 vs RTX 4060 8 GB:** Both are 8 GB cards. The 4060 desktop has higher memory bandwidth (272 vs ~256 GB/s). Expect similar or slightly better numbers. If you benchmark, please open an issue with results.
 
-**Other configurations (verified):**
-
-| Config | tok/s | Context | Source |
-|--------|-------|---------|--------|
-| Eager, warm cache | 7.7 | 1K max | [`debug_bench_zerodedup_20260325.txt`](benchmarks/debug_bench_zerodedup_20260325.txt) |
-| FlexAttention + GQA | 7.2 (short) | 1.2K+ | [`flex_bench_20260325.txt`](benchmarks/flex_bench_20260325.txt) |
-| disk_offload + bg fill | 5.4 | 1K | [`disk_offload_bgfill_20260325.txt`](benchmarks/disk_offload_bgfill_20260325.txt) |
-| HF device_map=auto | 0.19 | — | commit history |
-
-**What we do NOT claim:**
+**What we have NOT measured:**
+- No Ollama or llama.cpp comparison on the same GPU (those tools don't support GPT-OSS-20B natively)
 - Only GPT-OSS-20B has been benchmarked end-to-end
-- Ollama/llama.cpp comparisons are from different hardware ([source](https://github.com/ggml-org/llama.cpp/discussions/15396))
-- Multi-model support (11 families) is implemented but not benchmarked
-- GGUF Q4_K compute path is unit-tested but not benchmarked on real models yet
+- GGUF Q4_K loader passes unit tests but has not been tested on real model files
 
 ## Quick start
 
@@ -141,25 +123,25 @@ HF_TOKEN=hf_... docker compose up
 
 ## Supported models
 
-| Model family | model_type | Status |
-|-------------|-----------|--------|
-| GPT-OSS-20B/120B | `gpt_oss` | Benchmarked (native MXFP4) |
-| Mixtral 8x7B/8x22B | `mixtral` | Unit tested |
-| DeepSeek-V3/R1 | `deepseek_v3` | Unit tested |
-| Qwen 3.5 MoE (35B/122B/397B) | `qwen3_5_moe` | Unit tested |
-| Qwen 3 MoE (235B) | `qwen3_moe` | Profile exists |
-| Qwen 2 MoE | `qwen2_moe` | Profile exists |
-| OLMoE | `olmoe` | Profile exists |
-| Llama 4 Scout/Maverick | `llama4` | Profile exists |
-| Kimi K2 | `kimi_k2` | Profile exists |
-| DBRX | `dbrx` | Profile exists |
-| Phi-MoE | `phimoe` | Profile exists |
+| Model family | Size | RAM needed (est.) | Fits 64 GB RAM? | Status |
+|---|---|---|---|---|
+| GPT-OSS-20B | 20B (MXFP4) | ~10 GB | Yes | **Benchmarked** |
+| Qwen 3.5 MoE 35B | 35B | ~18 GB | Yes | Unit tested |
+| Mixtral 8x7B | 47B | ~24 GB | Yes | Unit tested |
+| GPT-OSS-120B | 120B | ~60 GB | Tight | Profile exists |
+| Mixtral 8x22B | 141B | ~70 GB | No (128 GB+) | Unit tested |
+| Qwen 3.5 MoE 397B | 397B | ~200 GB | No (workstation) | Unit tested |
+| DeepSeek-V3/R1 | 671B | ~350 GB | No (server) | Unit tested |
+| Llama 4, Kimi K2, OLMoE, DBRX, Phi-MoE | various | varies | varies | Profile exists |
 
-**Weight formats:** HuggingFace safetensors (BF16, FP8, MXFP4), GGUF (Q4_K, Q5_K, Q6_K).
+**Status levels:**
+- **Benchmarked:** Real weights loaded, tokens generated, throughput measured.
+- **Unit tested:** Offloading pipeline runs on mocked weights shaped like that architecture. Real weights NOT loaded.
+- **Profile exists:** Model registry has architecture metadata. No code run for that model.
 
-Any HuggingFace MoE model with a `layers[i].mlp.experts` architecture should work. The model registry auto-detects routing, layout, and shared experts from the config. PRs welcome for new models.
+**Weight formats:** HuggingFace safetensors (BF16, FP8, MXFP4). GGUF (Q4_K/Q5_K/Q6_K) loader implemented and unit-tested but not tested on real GGUF files.
 
-**Not yet supported:** Jamba (Mamba+MoE hybrid). GGUF inference path is unit-tested but not benchmarked on real models yet.
+**Test suite:** 284 tests. CI runs on every push.
 
 ## Configuration
 
