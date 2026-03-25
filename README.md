@@ -1,37 +1,40 @@
 # tinyserve — MoE Expert Offloading for Consumer GPUs
 
-Run GPT-OSS-20B at 20+ tok/s on an 8 GB laptop GPU.
+Run large MoE models on consumer GPUs with limited VRAM. Pure Python, no C++ compilation.
 
 tinyserve offloads Mixture-of-Experts (MoE) expert weights to CPU and serves them through a GPU LRU cache with adaptive prefetch. Models that need 40+ GB of VRAM run interactively on a single consumer GPU.
 
 ## Performance
 
-**Peak throughput (warm cache, 40-token decode):**
+All numbers measured on RTX PRO 2000 Blackwell 8 GB laptop GPU with GPT-OSS-20B MXFP4. Benchmark artifacts in [`benchmarks/`](benchmarks/). Your results will vary.
 
-| Hardware | tok/s | Hit Rate |
-|----------|-------|----------|
-| RTX PRO 2000 8 GB (Blackwell laptop) | 21-27 | 100% |
+**Verified benchmarks (SDPA + CPU KV cache, 238 expert slots):**
 
-**Realistic workloads (cold start, mixed prompts):**
+| Context | tok/s | Hit Rate | Source |
+|---------|-------|----------|--------|
+| 10 tokens | 10.8 | 90% | `sdpa_cpu_kv_20260325.txt` |
+| 100 tokens | 4.2 | 99% | `sdpa_cpu_kv_20260325.txt` |
+| 500 tokens | 1.4 | 99% | `sdpa_cpu_kv_20260325.txt` |
+| 1,000 tokens | 0.8 | 100% | `sdpa_cpu_kv_20260325.txt` |
+| 2,000 tokens | 0.4 | 100% | `sdpa_cpu_kv_20260325.txt` |
+| 8,000 tokens | 0.3 | 100% | `sdpa_cpu_kv_20260325.txt` |
 
-| Scenario | tok/s | Hit Rate |
-|----------|-------|----------|
-| Short decode (10 tok) | 10-11 | 82% |
-| Medium decode (40 tok) | 11-15 | 84% |
-| Long decode (100 tok) | 11-13 | 79% |
-| Code generation (60 tok) | 8-10 | 74% |
-| Long prompt + decode | 7-9 | 88% |
+**Warm cache peak (eager attention, short prompt):** 7.7 tok/s at 64% HR ([`debug_bench_zerodedup_20260325.txt`](benchmarks/debug_bench_zerodedup_20260325.txt)). Historical peak of 27 tok/s observed in earlier sessions but not reproducible in current benchmark suite — likely due to different VRAM availability at measurement time.
 
-**vs baselines (GPT-OSS-20B on 8 GB VRAM):**
+**Baseline comparison:**
 
-| System | tok/s | Notes |
-|--------|-------|-------|
-| HF `device_map=auto` | 0.19 | Naive CPU offload, 138x slower |
-| Ollama (8 GB, partial offload) | ~4-5 | Estimated, layer-level offload |
-| llama.cpp (12 GB, all MoE on CPU) | ~20 | C++, sends activations to CPU |
-| **tinyserve** | **7-27** | Depends on cache warmth + context |
+| System | tok/s | Source | Notes |
+|--------|-------|--------|-------|
+| HF `device_map=auto` | 0.19 | Measured (commit history) | Naive CPU offload |
+| Ollama (8 GB, est.) | ~4-5 | [GitHub #11688](https://github.com/ollama/ollama/issues/11688) | Estimated, not measured on our HW |
+| llama.cpp (12 GB, DDR4) | ~20 | [Discussion #15396](https://github.com/ggml-org/llama.cpp/discussions/15396) | Different hardware, C++ |
+| **tinyserve** | **0.3-10.8** | `benchmarks/*.txt` | Depends on context length |
 
-Numbers measured on RTX PRO 2000 Blackwell 8 GB laptop GPU with GPT-OSS-20B MXFP4. Your results will vary with GPU, model, and workload.
+**What we do NOT claim:**
+- We have not benchmarked on any model besides GPT-OSS-20B
+- Ollama/llama.cpp comparisons are estimates from different hardware
+- The 27 tok/s peak is from commit history, not current reproducible benchmarks
+- Multi-model support (Mixtral, DeepSeek, Qwen, etc.) is implemented but not benchmarked
 
 ## Quick start
 
@@ -197,7 +200,7 @@ Use `--kv-fp8` for FP8 KV cache (halves KV memory, doubles max context).
 
 ```bash
 pip install -e ".[dev]"
-python -m pytest tests/ --ignore=tests/test_hf_models.py -x -q  # 157 tests
+python -m pytest tests/ --ignore=tests/test_hf_models.py -x -q  # 156+ tests
 ```
 
 ## Benchmarking
