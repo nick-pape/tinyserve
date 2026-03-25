@@ -366,13 +366,25 @@ class GenericExpertPipeline:
         _prof = self.profiler
 
         def _load_expert(buf, li, eid):
-            """Load expert into GPU buffer — from RAMCache (pinned, fast) or store (mmap)."""
+            """Load expert into GPU buffer — from RAMCache (pinned, fast) or store (mmap).
+
+            If background fill is running and expert is not yet in RAM,
+            wait briefly for the fill thread to load it (avoids mmap page faults).
+            """
             if self.ram_cache is not None:
-                slot = self.ram_cache.lookup(li, eid)
+                ram = self.ram_cache
+                slot = ram.lookup(li, eid)
                 if slot is not None:
-                    # Pinned RAM → GPU at full PCIe bandwidth
-                    buf.packed.copy_(self.ram_cache.get_slot_data(slot), non_blocking=True)
+                    # Pinned RAM -> GPU at full PCIe bandwidth
+                    buf.packed.copy_(ram.get_slot_data(slot), non_blocking=True)
                     return
+                # Background fill running? Wait briefly — expert may arrive soon.
+                if not ram.fill_complete:
+                    ram.wait_for_fill(timeout=0.05)
+                    slot = ram.lookup(li, eid)
+                    if slot is not None:
+                        buf.packed.copy_(ram.get_slot_data(slot), non_blocking=True)
+                        return
             self.store.copy_to_buffer(buf, li, eid, non_blocking=True)
 
         load_done = torch.cuda.Event()

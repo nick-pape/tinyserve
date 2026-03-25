@@ -148,5 +148,45 @@ class RAMCache:
         self.hits = 0
         self.misses = 0
 
+    def start_background_fill(
+        self,
+        mmap_data: torch.Tensor,
+        num_layers: int,
+        num_experts: int,
+    ) -> threading.Thread:
+        """Start daemon thread that loads ALL experts from mmap into cache.
+
+        Uses round-robin across layers (L0E0, L1E0, L2E0, ..., L0E1, L1E1, ...)
+        so every layer gets some experts quickly.
+        Non-blocking -- inference can proceed while fill runs.
+        """
+        self._fill_done = threading.Event()
+
+        def _fill():
+            try:
+                for expert_idx in range(num_experts):
+                    for layer_idx in range(num_layers):
+                        if (layer_idx, expert_idx) not in self._lru:
+                            self.load_sync(layer_idx, expert_idx, mmap_data[layer_idx, expert_idx])
+            finally:
+                self._fill_done.set()
+
+        thread = threading.Thread(target=_fill, daemon=True)
+        thread.start()
+        return thread
+
+    @property
+    def fill_complete(self) -> bool:
+        """True when background fill has finished (or was never started)."""
+        evt = getattr(self, "_fill_done", None)
+        return evt is None or evt.is_set()
+
+    def wait_for_fill(self, timeout: float = 0.05) -> bool:
+        """Wait briefly for background fill to finish. Returns True if done."""
+        evt = getattr(self, "_fill_done", None)
+        if evt is None:
+            return True
+        return evt.wait(timeout=timeout)
+
     def shutdown(self) -> None:
         self._executor.shutdown(wait=True)

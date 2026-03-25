@@ -219,6 +219,18 @@ def offload_model(
         p.cache = cache
         p.cache_bias = cache_bias
 
+    # Start background eager fill: load all experts from mmap into pinned RAM.
+    # Runs concurrently with the first inference requests. Only when disk_offload
+    # is active and a RAM cache was created.
+    ram_cache = offloaded.pipelines[0].ram_cache if offloaded.pipelines else None
+    if disk_offload and ram_cache is not None:
+        ram_cache.start_background_fill(store._data, store.num_layers, store.num_experts)
+        logger.info(
+            "Background fill started: %d experts into RAM cache (%d slots)",
+            store.num_layers * store.num_experts,
+            ram_cache.num_slots,
+        )
+
     return model
 
 

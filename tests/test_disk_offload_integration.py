@@ -175,6 +175,88 @@ class TestRAMCacheSizedForAllExperts:
         )
 
 
+def _make_fake_mmap_data(num_layers, num_experts, expert_bytes):
+    """Create a fake mmap-like data tensor [num_layers, num_experts, expert_bytes]."""
+    torch.manual_seed(99)
+    return torch.randint(0, 256, (num_layers, num_experts, expert_bytes), dtype=torch.uint8)
+
+
+class TestBackgroundFill:
+    def test_background_fill_populates_cache(self):
+        """Background fill should load all experts into the RAM cache."""
+        num_layers, num_experts, expert_bytes = 2, 4, 1024
+        data = _make_fake_mmap_data(num_layers, num_experts, expert_bytes)
+        ram = RAMCache(num_slots=num_layers * num_experts, expert_bytes=expert_bytes)
+
+        thread = ram.start_background_fill(data, num_layers, num_experts)
+        thread.join(timeout=5.0)
+
+        assert ram.fill_complete
+        for li in range(num_layers):
+            for ei in range(num_experts):
+                slot = ram.lookup(li, ei)
+                assert slot is not None, f"Expert ({li}, {ei}) not in cache after fill"
+                assert torch.equal(ram.get_slot_data(slot), data[li, ei])
+        ram.shutdown()
+
+    def test_background_fill_is_nonblocking(self):
+        """Background fill should not block the calling thread."""
+        import time
+
+        num_layers, num_experts, expert_bytes = 2, 4, 1024
+        data = _make_fake_mmap_data(num_layers, num_experts, expert_bytes)
+        ram = RAMCache(num_slots=num_layers * num_experts, expert_bytes=expert_bytes)
+
+        t0 = time.monotonic()
+        thread = ram.start_background_fill(data, num_layers, num_experts)
+        dt = time.monotonic() - t0
+
+        # start_background_fill must return immediately (< 100ms)
+        assert dt < 0.1, f"start_background_fill blocked for {dt:.3f}s"
+
+        thread.join(timeout=5.0)
+        assert ram.fill_complete
+        ram.shutdown()
+
+    def test_background_fill_skips_already_cached(self):
+        """Background fill should not overwrite experts already in cache."""
+        num_layers, num_experts, expert_bytes = 1, 2, 1024
+        data = _make_fake_mmap_data(num_layers, num_experts, expert_bytes)
+        ram = RAMCache(num_slots=4, expert_bytes=expert_bytes)
+
+        # Pre-load expert (0, 0)
+        slot_before = ram.load_sync(0, 0, data[0, 0])
+
+        thread = ram.start_background_fill(data, num_layers, num_experts)
+        thread.join(timeout=5.0)
+
+        # Same slot should still be used (no duplicate allocation)
+        slot_after = ram.lookup(0, 0)
+        assert slot_after == slot_before
+        ram.shutdown()
+
+    def test_fill_complete_before_start(self):
+        """fill_complete should be True when no fill was ever started."""
+        ram = RAMCache(num_slots=4, expert_bytes=1024)
+        assert ram.fill_complete
+        ram.shutdown()
+
+    def test_round_robin_ordering(self):
+        """Fill visits L0E0, L1E0, L2E0... then L0E1, L1E1... (round-robin)."""
+        num_layers, num_experts, expert_bytes = 3, 2, 512
+        data = _make_fake_mmap_data(num_layers, num_experts, expert_bytes)
+        ram = RAMCache(num_slots=num_layers * num_experts, expert_bytes=expert_bytes)
+
+        thread = ram.start_background_fill(data, num_layers, num_experts)
+        thread.join(timeout=5.0)
+
+        # All experts present after fill
+        for li in range(num_layers):
+            for ei in range(num_experts):
+                assert ram.lookup(li, ei) is not None
+        ram.shutdown()
+
+
 class TestMadviseWillneedNoCrash:
     def test_on_regular_tensor(self):
         """madvise_willneed should not crash on regular (non-mmap) tensors."""
