@@ -8,6 +8,13 @@ version = "0.1.0"
 description = "Run large MoE models exceeding VRAM via expert CPU offloading with GPU cache"
 requires-python = ">=3.11"
 license = {text = "MIT"}
+authors = [{name = "Elnur Abdullaev", email = "elnur.abdullaev@sonia.so"}]
+readme = "README.md"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
     "torch>=2.6",
     "transformers>=4.50",
@@ -24,6 +31,9 @@ dev = ["pytest>=8.0", "ruff>=0.4", "pre-commit>=4.0", "aiohttp>=3.9", "tqdm>=4.6
 
 [project.scripts]
 tinyserve = "tinyserve.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/e1n00r/tinyserve"
 
 [tool.ruff]
 target-version = "py311"
