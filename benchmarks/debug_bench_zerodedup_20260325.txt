@@ -1,0 +1,39 @@
+[10:57:22] === DEBUG BENCHMARK START ===
+[10:57:22] Step 1: Environment
+[10:57:23]   torch: 2.10.0+cu128
+[10:57:23]   CUDA available: True
+[10:57:23]   GPU: NVIDIA RTX PRO 2000 Blackwell Generation Laptop GPU
+[10:57:23]   VRAM: 8.0 / 8.1 GB free
+[10:57:23]   GPU processes: 80926, python3, 100 MiB
+[10:57:23]   RAM: 62.8 / 66.8 GB available
+[10:57:23] Step 2: Import tinyserve
+[10:57:25]   OK
+[10:57:25] Step 3: Load model (eager, no KV, gpu_util=0.85)
+[10:58:25]   Loaded in 60.1s
+[10:58:25]   Expert slots: 238
+[10:58:25]   VRAM free after load: 0.97 GB
+[10:58:28] Step 4: Short decode (10 tokens)
+[10:58:30]   10 tok in 2.26s = 4.4 tok/s, HR=58%
+[10:58:30]   Output:  Paris."
+
+Sure! Here's a simple example of
+[10:58:30] Step 5: Warm cache decode (40 tokens)
+[10:58:38]   40 tok in 5.19s = 7.7 tok/s, HR=64%
+[10:58:38] Step 6: Context scaling (eager attention)
+[10:58:41]   ctx=   50: 10 tok, 3.2 tok/s, HR=88%, VRAM_free=927MB
+[10:58:48]   ctx=  200: 10 tok, 1.5 tok/s, HR=97%, VRAM_free=900MB
+[10:59:02]   ctx=  500: 10 tok, 0.7 tok/s, HR=99%, VRAM_free=782MB
+[10:59:29]   ctx= 1000: 10 tok, 0.4 tok/s, HR=99%, VRAM_free=367MB
+[10:59:29] Step 7: FlexAttention test
+[10:59:29]   Loading with attn_implementation='flex', max_seq_len=4096, FP8 KV...
+[11:00:25]   Loaded. KV=0MB, experts=0, VRAM_free=770MB
+[11:00:25]   Compiling (warmup)...
+[11:00:27]   Compiled.
+[11:00:33]   flex ctx=   10: 10 tok, 1.9 tok/s, HR=0%, VRAM_free=745MB
+[11:00:54]   flex ctx=  100: 10 tok, 0.5 tok/s, HR=0%, VRAM_free=724MB
+[11:02:27]   flex ctx=  500: 10 tok, 0.1 tok/s, HR=0%, VRAM_free=709MB
+[11:05:29]   flex ctx= 1000: 10 tok, 0.1 tok/s, HR=0%, VRAM_free=684MB
+[11:09:09]   flex ctx= 1201: 10 tok, 0.0 tok/s, HR=0%, VRAM_free=684MB
+[11:12:49]   flex ctx= 1201: 10 tok, 0.0 tok/s, HR=0%, VRAM_free=684MB
+[11:12:49] === DEBUG BENCHMARK END ===
+[11:12:49] Full log at: /tmp/debug_bench.log
