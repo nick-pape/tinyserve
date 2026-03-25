@@ -257,6 +257,105 @@ class TestBackgroundFill:
         ram.shutdown()
 
 
+class TestAutoPinnedVsMmap:
+    def test_auto_pinned_when_fits(self):
+        """from_safetensors returns None for ram_cache when experts fit in RAM."""
+        import json
+        import os
+        import tempfile
+
+        from safetensors.torch import save_file
+
+        # Create a tiny fake model dir with safetensors expert weights.
+        num_layers = 2
+        num_experts = 2
+        hidden = 16
+        intermediate = 32
+
+        with tempfile.TemporaryDirectory() as model_dir:
+            weight_map = {}
+            tensors = {}
+            for li in range(num_layers):
+                for param_name, shape in [
+                    ("gate_up_proj_blocks", (num_experts, 2 * intermediate, hidden)),
+                    ("gate_up_proj_scales", (num_experts, 2 * intermediate, hidden // 32)),
+                    ("down_proj_blocks", (num_experts, hidden, intermediate)),
+                    ("down_proj_scales", (num_experts, hidden, intermediate // 32)),
+                ]:
+                    key = f"model.layers.{li}.mlp.experts.{param_name}"
+                    tensors[key] = torch.randint(0, 256, shape, dtype=torch.uint8)
+                    weight_map[key] = "model.safetensors"
+
+            save_file(tensors, os.path.join(model_dir, "model.safetensors"))
+            with open(os.path.join(model_dir, "model.safetensors.index.json"), "w") as f:
+                json.dump({"weight_map": weight_map}, f)
+
+            result = GenericExpertStore.from_safetensors(
+                model_dir, "mlp", "experts", list(range(num_layers)),
+                disk_offload=True,
+            )
+            store, n_experts, ram_cache = result
+            # Tiny experts easily fit in RAM → auto-pinned, no RAMCache
+            assert ram_cache is None
+            assert store._disk_offload is False
+            # Pinned only when CUDA is available; otherwise regular CPU tensor.
+            if torch.cuda.is_available():
+                assert store._data.is_pinned()
+            assert n_experts == num_experts
+
+    def test_mmap_when_doesnt_fit(self):
+        """from_safetensors returns RAMCache when experts exceed available RAM."""
+        import json
+        import os
+        import tempfile
+        from unittest.mock import patch
+
+        from safetensors.torch import save_file
+
+        num_layers = 2
+        num_experts = 2
+        hidden = 16
+        intermediate = 32
+
+        with tempfile.TemporaryDirectory() as model_dir:
+            weight_map = {}
+            tensors = {}
+            for li in range(num_layers):
+                for param_name, shape in [
+                    ("gate_up_proj_blocks", (num_experts, 2 * intermediate, hidden)),
+                    ("gate_up_proj_scales", (num_experts, 2 * intermediate, hidden // 32)),
+                    ("down_proj_blocks", (num_experts, hidden, intermediate)),
+                    ("down_proj_scales", (num_experts, hidden, intermediate // 32)),
+                ]:
+                    key = f"model.layers.{li}.mlp.experts.{param_name}"
+                    tensors[key] = torch.randint(0, 256, shape, dtype=torch.uint8)
+                    weight_map[key] = "model.safetensors"
+
+            save_file(tensors, os.path.join(model_dir, "model.safetensors"))
+            with open(os.path.join(model_dir, "model.safetensors.index.json"), "w") as f:
+                json.dump({"weight_map": weight_map}, f)
+
+            # Mock sysconf to report very low available RAM so experts don't fit.
+            original_sysconf = os.sysconf
+
+            def fake_sysconf(name):
+                if name == "SC_AVPHYS_PAGES":
+                    return 1  # ~4 KB available
+                return original_sysconf(name)
+
+            with patch("os.sysconf", side_effect=fake_sysconf):
+                result = GenericExpertStore.from_safetensors(
+                    model_dir, "mlp", "experts", list(range(num_layers)),
+                    disk_offload=True,
+                )
+            store, n_experts, ram_cache = result
+            # Experts "don't fit" → mmap path, RAMCache created
+            assert ram_cache is not None
+            assert store._disk_offload is True
+            assert n_experts == num_experts
+            ram_cache.shutdown()
+
+
 class TestMadviseWillneedNoCrash:
     def test_on_regular_tensor(self):
         """madvise_willneed should not crash on regular (non-mmap) tensors."""

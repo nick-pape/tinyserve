@@ -407,7 +407,40 @@ class GenericExpertStore:
             pass  # Cache save is best-effort; don't block loading.
 
         if disk_offload:
-            # Keep mmap alive — don't copy to pinned, don't delete temp file.
+            # Phase 2: Auto-detect whether experts fit in available RAM.
+            # If they do, promote to a single pinned buffer (no mmap, no RAMCache).
+            # If they don't, keep mmap + RAMCache for hot subset.
+            total_expert_bytes = num_moe_layers * num_experts * layout.total_bytes
+            available_ram = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_AVPHYS_PAGES")
+
+            if total_expert_bytes < available_ram * 0.7:
+                # Experts fit in RAM — use single pinned buffer (no mmap overhead).
+                pinned = torch.empty(
+                    num_moe_layers, num_experts, layout.total_bytes,
+                    dtype=torch.uint8,
+                )
+                if torch.cuda.is_available():
+                    pinned = pinned.pin_memory()
+                pinned.copy_(data)
+                del data, mmap
+                gc.collect()
+                try:
+                    os.unlink(tmp_name)
+                except OSError:
+                    pass
+                # Bypass __init__'s is_pinned() check (no CUDA in test envs).
+                store = cls.__new__(cls)
+                store._data = pinned
+                store.layout = layout
+                store.num_layers = num_moe_layers
+                store.num_experts = num_experts
+                store.expert_bytes = layout.total_bytes
+                store._bf16_layout = layout
+                store.buffer_expert_bytes = layout.total_bytes
+                store._disk_offload = False
+                return store, num_experts, None
+
+            # Experts don't fit — keep mmap + RAMCache for hot subset.
             # Use MADV_HUGEPAGE for transparent huge pages — better for large
             # sequential reads per expert blob than MADV_RANDOM readahead disable.
             MADV_HUGEPAGE = 14

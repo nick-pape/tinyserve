@@ -165,6 +165,17 @@ class OffloadedModel(nn.Module):
             # Native quantized path: load expert weights directly from safetensors.
             # Non-expert weights (attention, norms, etc.) are taken from `model`.
             layer_indices = [li for li, _ in moe_layers]
+
+            # Phase 1: Zero HF expert weights BEFORE loading MXFP4 store.
+            # HF loads all weights including experts as BF16 (~8 GB). Zeroing
+            # them first eliminates peak RAM overlap with the MXFP4 store.
+            for _, layer in moe_layers:
+                container = getattr(getattr(layer, moe_block_attr), expert_list_attr)
+                for param in container.parameters():
+                    param.data = torch.empty(0, device="cpu")
+            import gc
+            gc.collect()
+
             if disk_offload:
                 store, _, ram_cache = GenericExpertStore.from_safetensors(
                     model_id, moe_block_attr, expert_list_attr, layer_indices,
@@ -190,14 +201,6 @@ class OffloadedModel(nn.Module):
                     param = getattr(template, name)
                     if param.dtype.is_floating_point:
                         param.data = param.data.to(torch.bfloat16)
-            # Zero expert params in the (dequantized) model — they're not needed.
-            # Frees ~8 GB of BF16 expert weights that HF loaded unnecessarily.
-            for _, layer in moe_layers:
-                container = getattr(getattr(layer, moe_block_attr), expert_list_attr)
-                for param in container.parameters():
-                    param.data = torch.empty(0, device="cpu")
-            import gc
-            gc.collect()
         else:
             # Standard path: extract weights from the model's current parameters.
             template = _make_template(first_container, device)
