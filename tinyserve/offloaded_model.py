@@ -524,7 +524,10 @@ def _install_offloaded_forward(
                 shared_event = torch.cuda.Event()
                 shared_event.record(pipeline.shared_stream)
 
-        output = pipeline.execute_layer_experts(flat, layer_idx, top_idx, routing_weights)
+        if flat.shape[0] > 1:
+            output = pipeline.execute_layer_experts_batched(flat, layer_idx, top_idx, routing_weights)
+        else:
+            output = pipeline.execute_layer_experts(flat, layer_idx, top_idx, routing_weights)
 
         if shared_event is not None:
             torch.cuda.current_stream().wait_event(shared_event)
