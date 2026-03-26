@@ -1,0 +1,31 @@
+=== Full Improvement Benchmark ===
+Start: 15:48:41
+GPU: NVIDIA RTX PRO 2000 Blackwell Generation Laptop GPU, VRAM: 8.0/8.1 GB free
+
+Loading model (SDPA)...
+Loaded in 50.7s
+Expert cache slots: 238
+
+======================================================================
+Part 1: Context Scaling (prefill/decode separated)
+   ctx    prefill     decode  dec tok/s  total tok/s  dec HR%
+-----------------------------------------------------------------
+    10      1059ms       696ms      28.8        11.4      97%
+    50      1709ms       673ms      29.7         8.4      99%
+   100      1752ms       621ms      32.2         8.4     100%
+   500      2498ms       653ms      30.6         6.3     100%
+  1000      3196ms       666ms      30.0         5.2     100%
+  2000      4271ms       734ms      27.2         4.0      99%
+  3000 ERR: CUDA out of memory. Tried to allocate 1.12 GiB. GPU 0 has a total capacity of 7.
+
+======================================================================
+Part 2: model.generate() end-to-end (what users see)
+   ctx   tok/s   HR%
+-------------------------
+    10    9.6   80%
+    50    7.3   78%
+   100    7.3   80%
+   500    5.9   80%
+  1000    5.0   85%
+
+Done: 15:50:16

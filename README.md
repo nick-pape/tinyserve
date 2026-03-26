@@ -4,7 +4,7 @@ Run Mixture-of-Experts models that don't fit in VRAM on a single NVIDIA GPU. Pur
 
 tinyserve offloads MoE expert weights to CPU RAM and caches hot experts on the GPU with predictive prefetch. A 20B MoE model (which only activates ~2B parameters per token) needs ~10 GB of CPU RAM and runs on 8 GB of VRAM.
 
-**Realistic expectations:** On an 8 GB laptop GPU, expect **2–7 tok/s for normal chat-length context** (100–500 tokens) and **15 tok/s on short prompts** with warm cache. This is 80× faster than HuggingFace `device_map="auto"` (0.19 tok/s) but slower than llama.cpp for models it supports.
+**Realistic expectations:** On an 8 GB laptop GPU, expect **5–10 tok/s for normal chat** (100–500 tokens) and **~30 tok/s decode** with warm cache. This is 160× faster than HuggingFace `device_map="auto"` (0.19 tok/s) but slower than llama.cpp for models it supports.
 
 ## Who this is for
 
@@ -18,19 +18,34 @@ tinyserve loads directly from HuggingFace safetensors. If the model is on the Hu
 
 All numbers from an RTX PRO 2000 Blackwell 8 GB **laptop** GPU running GPT-OSS-20B (MXFP4, 238 expert cache slots). Raw benchmark logs in [`benchmarks/`](benchmarks/).
 
-| Context length | tok/s | Cache hit rate | Source file |
+### Decode speed (tokens generated per second)
+
+Decode speed is **constant** regardless of context length — the expert cache stays warm after prefill.
+
+| Context length | Decode tok/s | Cache hit rate | Source file |
 |---|---|---|---|
-| 10 tokens | 15.2 | 90% | `bench_micro_opt_20260326.txt` |
-| 50 tokens | 8.9 | 92% | same |
-| 100 tokens | 6.7 | 95% | same |
-| 500 tokens | 2.4 | 99% | same |
-| 1,000 tokens | 1.3 | 99% | same |
-| 2,000 tokens | 0.7 | 100% | same |
-| 3,000 tokens | 0.5 | 100% | same |
+| 10 tokens | 28.8 | 97% | `batched_prefill_20260326.txt` |
+| 50 tokens | 29.7 | 99% | same |
+| 100 tokens | 32.2 | 100% | same |
+| 500 tokens | 30.6 | 100% | same |
+| 1,000 tokens | 30.0 | 100% | same |
+| 2,000 tokens | 27.2 | 99% | same |
+
+### End-to-end speed (prefill + decode combined)
+
+Total throughput including prompt processing. Prefill time grows linearly with context; decode speed stays constant.
+
+| Context length | Prefill time | Total tok/s | Source file |
+|---|---|---|---|
+| 10 tokens | 1.1s | 11.4 | `batched_prefill_20260326.txt` |
+| 100 tokens | 1.8s | 8.4 | same |
+| 500 tokens | 2.5s | 6.3 | same |
+| 1,000 tokens | 3.2s | 5.2 | same |
+| 2,000 tokens | 4.3s | 4.0 | same |
 
 **Baseline:** HuggingFace `device_map="auto"` on the same hardware: 0.19 tok/s.
 
-**Why throughput drops with context:** Attention is O(n) per decoded token (scanning all KV entries). At 1K+ context, attention compute dominates over expert loading. This affects all transformer models on consumer hardware. Paged attention and fused kernels are on the roadmap.
+**Why total throughput drops with context:** Prefill processes all input tokens through expert layers. With batched expert prefill, each expert is loaded once per layer (not once per token), but prefill still takes 1-4 seconds for long prompts. Once prefill completes, decode runs at a constant ~30 tok/s regardless of context length.
 
 **RTX PRO 2000 vs RTX 4060 8 GB:** Both are 8 GB cards. The 4060 desktop has higher memory bandwidth (272 vs ~256 GB/s). Expect similar or slightly better numbers. If you benchmark, please open an issue with results.
 
