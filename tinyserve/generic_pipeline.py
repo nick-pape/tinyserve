@@ -376,6 +376,74 @@ class GenericExpertPipeline:
             )
         return self._expert_output_buf.clone()
 
+    def execute_layer_experts_batched(
+        self,
+        hidden_states: torch.Tensor,
+        layer_idx: int,
+        expert_indices: torch.Tensor,
+        routing_weights: torch.Tensor,
+    ) -> torch.Tensor:
+        """Batched expert dispatch for prefill: load each expert once, batch all tokens.
+
+        Groups tokens by expert_id, loads each unique expert once, runs a single
+        batched forward for all tokens routed to that expert, then scatters weighted
+        results back. Reduces expert loads from O(seq_len * top_k) to O(num_unique_experts).
+        """
+        seq_len = hidden_states.shape[0]
+        if seq_len == 0:
+            return hidden_states.clone()
+
+        output = torch.zeros_like(hidden_states)
+        top_k = expert_indices.shape[1]
+
+        expert_groups: dict[int, list[tuple[int, int]]] = {}
+        eid_list = expert_indices.tolist()
+        for tok in range(seq_len):
+            for k in range(top_k):
+                eid = eid_list[tok][k]
+                if eid not in expert_groups:
+                    expert_groups[eid] = []
+                expert_groups[eid].append((tok, k))
+
+        cache = self.cache
+
+        for eid, group in expert_groups.items():
+            tok_indices = [g[0] for g in group]
+            weight_indices = [g[1] for g in group]
+
+            h_batch = hidden_states[tok_indices]
+
+            out_batch = None
+            if cache is not None:
+                slot = cache.lookup(layer_idx, eid)
+                if slot is not None:
+                    packed = cache.get_packed(slot)
+                    if self._inline_fwd is not None:
+                        out_batch = self._inline_fwd(packed, h_batch)
+                    else:
+                        out_batch = forward_from_packed(
+                            self.template, packed, self._param_refs, h_batch
+                        )
+
+            if out_batch is None:
+                buf = self.buf_a
+                self.store.copy_to_buffer(buf, layer_idx, eid, non_blocking=False)
+                torch.cuda.synchronize()
+
+                if self._inline_fwd is not None:
+                    out_batch = self._inline_fwd(buf.packed, h_batch)
+                else:
+                    out_batch = swap_weights_and_forward(self.template, buf, h_batch)
+
+                if cache is not None:
+                    slot = cache.allocate(layer_idx, eid)
+                    cache.get_packed(slot).copy_(buf.packed)
+
+            for i, (tok_idx, k) in enumerate(zip(tok_indices, weight_indices)):
+                output[tok_idx] += routing_weights[tok_idx, k] * out_batch[i]
+
+        return output
+
     def _execute_token_experts(
         self,
         h: torch.Tensor,
