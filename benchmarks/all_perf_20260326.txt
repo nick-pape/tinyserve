@@ -1,0 +1,90 @@
+=== Final Performance Benchmark ===
+GPU: NVIDIA RTX PRO 2000 Blackwell Generation Laptop GPU
+C++ loop: True, GPU INT4: True
+Loading model...
+Loaded in 52s
+Expert slots: 238
+FAIL:
+Traceback (most recent call last):
+  File "/tmp/bench_final.py", line 43, in <module>
+    model.generate(**inp, max_new_tokens=20, do_sample=False, past_key_values=kv)
+  File "/home/elnur/.local/lib/python3.12/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elnur/.local/lib/python3.12/site-packages/transformers/generation/utils.py", line 2535, in generate
+    result = decoding_method(
+             ^^^^^^^^^^^^^^^^
+  File "/home/elnur/.local/lib/python3.12/site-packages/transformers/generation/utils.py", line 2728, in _sample
+    outputs = self._prefill(
+              ^^^^^^^^^^^^^^
+  File "/home/elnur/.local/lib/python3.12/site-packages/transformers/generation/utils.py", line 3776, in _prefill
+    return self(**model_inputs, return_dict=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elnur/.local/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1776, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elnur/.local/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1787, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elnur/.local/lib/python3.12/site-packages/transformers/utils/generic.py", line 843, in wrapper
+    output = func(self, *args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elnur/.local/lib/python3.12/site-packages/transformers/models/gpt_oss/modeling_gpt_oss.py", line 661, in forward
+    outputs: MoeModelOutputWithPast = self.model(
+                                      ^^^^^^^^^^^
+  File "/home/elnur/.local/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1776, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elnur/.local/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1787, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elnur/.local/lib/python3.12/site-packages/transformers/utils/generic.py", line 917, in wrapper
+    output = func(self, *args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elnur/.local/lib/python3.12/site-packages/transformers/utils/output_capturing.py", line 253, in wrapper
+    outputs = func(self, *args, **kwargs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elnur/.local/lib/python3.12/site-packages/transformers/models/gpt_oss/modeling_gpt_oss.py", line 500, in forward
+    hidden_states = decoder_layer(
+                    ^^^^^^^^^^^^^^
+  File "/home/elnur/.local/lib/python3.12/site-packages/transformers/modeling_layers.py", line 93, in __call__
+    return super().__call__(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elnur/.local/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1776, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elnur/.local/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1787, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elnur/.local/lib/python3.12/site-packages/transformers/models/gpt_oss/modeling_gpt_oss.py", line 389, in forward
+    hidden_states, _ = self.mlp(hidden_states)  # diff with llama: router scores
+                       ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elnur/.local/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1776, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elnur/.local/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1787, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elnur/gpt-oss-offload/tinyserve/offloaded_model.py", line 527, in offloaded_forward
+    output = pipeline.execute_layer_experts(flat, layer_idx, top_idx, routing_weights)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elnur/gpt-oss-offload/tinyserve/generic_pipeline.py", line 355, in execute_layer_experts
+    self._execute_token_experts(
+  File "/home/elnur/gpt-oss-offload/tinyserve/generic_pipeline.py", line 471, in _execute_token_experts
+    out = _inline(packed, h)
+          ^^^^^^^^^^^^^^^^^^
+  File "/home/elnur/gpt-oss-offload/tinyserve/generic_pipeline.py", line 212, in _forward
+    return fwd.forward(h, packed)
+           ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elnur/gpt-oss-offload/tinyserve/gpu_int4.py", line 144, in forward
+    self._int4_cache[cache_key] = self._convert_expert(expert_packed)
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elnur/gpt-oss-offload/tinyserve/gpu_int4.py", line 128, in _convert_expert
+    gu_packed, gu_sz_tensor = mxfp4_to_int4pack_gpu(
+                              ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elnur/gpt-oss-offload/tinyserve/gpu_int4.py", line 78, in mxfp4_to_int4pack_gpu
+    w_int4packed = torch._convert_weight_to_int4pack(w_uint8, 2)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 20.00 MiB. GPU 0 has a total capacity of 7.54 GiB of which 14.19 MiB is free. Including non-PyTorch memory, this process has 7.48 GiB memory in use. Of the allocated memory 7.19 GiB is allocated by PyTorch, and 104.76 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
+
+Done.
