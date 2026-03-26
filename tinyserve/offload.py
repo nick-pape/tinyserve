@@ -163,6 +163,61 @@ def _register_sdpa_attention() -> str:
         return "eager"
 
 
+def _register_flashinfer_attention() -> str:
+    """Register FlashInfer attention backend. Near-optimal GQA decode kernels."""
+    try:
+        import transformers
+        import flashinfer
+
+        def flashinfer_attention_with_sinks(
+            module, query, key, value, attention_mask, scaling, dropout=0.0, sliding_window=None, **_
+        ):
+            N, H, L, E = query.shape
+            _, G, S, _ = key.shape
+
+            if L == 1:
+                q_2d = query[0, :, 0, :]
+                k_nhd = key[0].permute(1, 0, 2).contiguous()
+                v_nhd = value[0].permute(1, 0, 2).contiguous()
+
+                if sliding_window is not None and S > sliding_window:
+                    k_nhd = k_nhd[-sliding_window:]
+                    v_nhd = v_nhd[-sliding_window:]
+
+                out_2d = flashinfer.decode.single_decode_with_kv_cache(
+                    q_2d, k_nhd, v_nhd,
+                    kv_layout='NHD',
+                    sm_scale=scaling,
+                )
+                out = out_2d.unsqueeze(0).unsqueeze(0)
+            else:
+                q_nhd = query[0].permute(1, 0, 2).contiguous()
+                k_nhd = key[0].permute(1, 0, 2).contiguous()
+                v_nhd = value[0].permute(1, 0, 2).contiguous()
+
+                out_nhd = flashinfer.prefill.single_prefill_with_kv_cache(
+                    q_nhd, k_nhd, v_nhd,
+                    kv_layout='NHD',
+                    causal=True,
+                    sm_scale=scaling,
+                )
+                out = out_nhd.unsqueeze(0)
+
+            return out.contiguous(), None
+
+        transformers.AttentionInterface.register("flashinfer", flashinfer_attention_with_sinks)
+        try:
+            transformers.AttentionMaskInterface.register("flashinfer", transformers.masking_utils.eager_mask)
+        except Exception:
+            pass
+        gpt_oss_mod = getattr(transformers.models, "gpt_oss", None)
+        if gpt_oss_mod:
+            gpt_oss_mod.modeling_gpt_oss.GptOssPreTrainedModel._supports_flashinfer = True
+        return "flashinfer"
+    except Exception:
+        return "eager"
+
+
 _ROUTING_MAP = {
     "mixtral": ("router_native", False, "gate"),
     "qwen3_moe": ("router_native", False, "gate"),
@@ -362,6 +417,8 @@ def load_and_offload(
             _register_flex_attention()
         elif attn_impl == "sdpa":
             _register_sdpa_attention()
+        elif attn_impl == "flashinfer":
+            attn_impl = _register_flashinfer_attention()
     else:
         attn_impl = "eager"
         if flash_attention:
