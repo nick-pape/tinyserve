@@ -20,8 +20,8 @@ All numbers from an RTX PRO 2000 Blackwell 8 GB **laptop** GPU running GPT-OSS-2
 
 | Context length | tok/s | Cache hit rate | Source file |
 |---|---|---|---|
-| 10 tokens | 10.8 | 90% | `sdpa_cpu_kv_20260325.txt` |
-| 100 tokens | 4.2 | 99% | same |
+| 10 tokens | 10.7 | 88% | `sdpa_cpu_kv_20260325.txt` |
+| 100 tokens | 4.5 | 98% | same |
 | 500 tokens | 1.4 | 99% | same |
 | 1,000 tokens | 0.8 | 100% | same |
 | 3,000 tokens | 0.3 | 100% | same |
