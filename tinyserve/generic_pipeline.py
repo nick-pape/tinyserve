@@ -195,6 +195,11 @@ def _build_gpu_int4_forward(layout, act_fn):
 
     Returns None if layout is not MXFP4 or GPU INT4 ops unavailable.
     """
+    # GPU INT4 disabled: conversion cache consumes too much VRAM on 8GB GPUs.
+    # The MXFP4 template forward (dot_scaled) is used instead.
+    # TODO: enable when VRAM headroom detection is implemented.
+    return None
+
     from .gpu_int4 import HAS_INT4_GPU
 
     if not HAS_INT4_GPU:
