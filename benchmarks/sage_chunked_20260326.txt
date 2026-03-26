@@ -1,0 +1,15 @@
+=== SageAttention + Chunked Prefill + Sliding Window ===
+GPU: NVIDIA RTX PRO 2000 Blackwell Generation Laptop GPU
+SageAttention: available
+Expert slots: 238
+Warmup OK
+   ctx  gen   tok/s   HR%     method
+----------------------------------------
+    10   20    8.0   91%   standard
+   100   20    3.9   98%   standard
+   500   20    1.3   99%   standard
+  1000   20    0.8  100%   standard
+  2000   20    0.4  100%    chunked
+  3001   20    0.3  100%    chunked
+  3001   20    0.3  100%    chunked
+Done.

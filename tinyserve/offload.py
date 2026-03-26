@@ -152,22 +152,16 @@ def _register_sdpa_attention() -> str:
                 if sliding_window is not None and S > sliding_window:
                     k_decode = key_exp[:, :, -sliding_window:]
                     v_decode = val_exp[:, :, -sliding_window:]
-                # SageAttention (INT8 Q/K, 2-5x faster) or SDPA Flash fallback
-                try:
-                    from sageattention import sageattn
-                    out = sageattn(query, k_decode, v_decode, is_causal=False, scale=scaling)
-                except (ImportError, Exception):
-                    out = torch.nn.functional.scaled_dot_product_attention(
-                        query, k_decode, v_decode, attn_mask=None, dropout_p=0.0,
-                        is_causal=False, scale=scaling,
-                    )
+                # SDPA Flash backend: no attn_mask, O(n) memory.
+                # SageAttention benchmarked but slower for batch=1 decode
+                # (INT8 quantization overhead > compute savings on tiny Q/K).
+                out = torch.nn.functional.scaled_dot_product_attention(
+                    query, k_decode, v_decode, attn_mask=None, dropout_p=0.0,
+                    is_causal=False, scale=scaling,
+                )
             else:
-                # Prefill: SageAttention with causal mask or SDPA fallback
-                try:
-                    from sageattention import sageattn
-                    out = sageattn(query, key_exp, val_exp, is_causal=True, scale=scaling)
-                except (ImportError, Exception):
-                    out = torch.nn.functional.scaled_dot_product_attention(
+                # Prefill: SDPA Flash with is_causal=True
+                out = torch.nn.functional.scaled_dot_product_attention(
                     query, key_exp, val_exp, attn_mask=None, dropout_p=0.0,
                     is_causal=True, scale=scaling,
                 )
