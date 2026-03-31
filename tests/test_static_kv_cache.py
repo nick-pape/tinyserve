@@ -183,13 +183,15 @@ def test_cpu_storage_gpu_return():
     assert torch.equal(k_out, k)
 
 
-def test_cpu_storage_vram_bytes_zero():
+def test_cpu_storage_vram_bytes():
     cache = StaticKVCache(
         max_seq_len=32, num_layers=1, num_kv_heads=2,
         head_dim=4, device=torch.device("cpu"), dtype=torch.bfloat16,
         storage_device=torch.device("cpu"),
     )
-    assert cache.vram_bytes == 0
+    # vram_bytes reports actual bytes regardless of storage device
+    expected = 2 * 1 * 1 * 2 * 32 * 4 * 2  # K+V × layers × batch × heads × seq × dim × bf16
+    assert cache.vram_bytes == expected
 
 
 def test_cpu_storage_sequential_decode():
@@ -251,7 +253,8 @@ def test_from_model_config_storage_device():
     )
     assert cache._storage_device == torch.device("cpu")
     assert cache._compute_device == torch.device("cpu")
-    assert cache.vram_bytes == 0
+    expected = 2 * 2 * 1 * 4 * 32 * 8 * 2  # K+V × layers × batch × heads × seq × dim × bf16
+    assert cache.vram_bytes == expected
 
 
 def test_default_storage_device_matches_device():
@@ -261,7 +264,8 @@ def test_default_storage_device_matches_device():
     )
     assert cache._storage_device == torch.device("cpu")
     assert cache._compute_device == torch.device("cpu")
-    assert cache.vram_bytes == 0
+    expected = 2 * 1 * 1 * 1 * 16 * 4 * 2  # K+V × layers × batch × heads × seq × dim × bf16
+    assert cache.vram_bytes == expected
 
 
 def test_static_shapes_default_off():

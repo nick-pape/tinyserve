@@ -87,10 +87,29 @@ class StaticKVCache:
         return num_layers * 2 * num_kv_heads * head_dim * elem_size
 
     @property
-    def vram_bytes(self):
-        if self._storage_device == torch.device("cpu"):
-            return 0
-        return self._k.nelement() * self._k.element_size() * 2
+    def vram_bytes(self) -> int:
+        return self._k.nelement() * self._k.element_size() + \
+               self._v.nelement() * self._v.element_size()
+
+    def extend(self, additional_tokens: int) -> None:
+        """Grow KV cache capacity by additional_tokens."""
+        new_max = self.max_seq_len + additional_tokens
+        new_k = torch.zeros(
+            self.num_layers, 1, self.num_kv_heads, new_max, self.head_dim,
+            dtype=self._dtype, device=self._storage_device,
+        )
+        new_v = torch.zeros(
+            self.num_layers, 1, self.num_kv_heads, new_max, self.head_dim,
+            dtype=self._dtype, device=self._storage_device,
+        )
+        new_k[:, :, :, :self.max_seq_len, :] = self._k
+        new_v[:, :, :, :self.max_seq_len, :] = self._v
+        if self._storage_device != self._compute_device and self._storage_device == torch.device("cpu"):
+            new_k = new_k.pin_memory()
+            new_v = new_v.pin_memory()
+        self._k = new_k
+        self._v = new_v
+        self.max_seq_len = new_max
 
     def update(self, key_states, value_states, layer_idx, cache_kwargs=None):
         new_tokens = key_states.shape[2]
