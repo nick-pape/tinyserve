@@ -100,3 +100,71 @@ def test_kv_cache_vram_bytes():
     )
     expected = 2 * 2 * 1 * 4 * 100 * 32 * 2  # K+V × layers × batch × heads × seq × dim × bf16
     assert cache.vram_bytes == expected
+
+
+def test_vram_budget_rebalance_on_kv_pressure():
+    from tinyserve.vram_budget import VRAMBudget
+
+    cache = _make_cache(capacity=10)
+    for i in range(8):
+        cache.allocate(0, i)
+    cache.flush_slot_updates()
+
+    from tinyserve.static_kv_cache import StaticKVCache
+    kv = StaticKVCache(
+        max_seq_len=100, num_layers=2, num_kv_heads=4,
+        head_dim=32, device=torch.device("cpu")
+    )
+    # Simulate KV at 90% capacity
+    for li in range(2):
+        kv._seq_lens[li] = 90
+
+    budget = VRAMBudget(cache, kv, expert_bytes=64, kv_bytes_per_token=2*4*32*2*2)
+    action = budget.check()
+
+    assert action["should_rebalance"] is True
+    assert action["direction"] == "shrink_experts"
+    assert action["expert_slots_to_free"] > 0
+
+
+def test_vram_budget_no_action_when_balanced():
+    from tinyserve.vram_budget import VRAMBudget
+
+    cache = _make_cache(capacity=10)
+    for i in range(5):
+        cache.allocate(0, i)
+    cache.flush_slot_updates()
+
+    from tinyserve.static_kv_cache import StaticKVCache
+    kv = StaticKVCache(
+        max_seq_len=100, num_layers=2, num_kv_heads=4,
+        head_dim=32, device=torch.device("cpu")
+    )
+    kv._seq_lens[0] = 30  # 30% used
+    kv._seq_lens[1] = 30
+
+    budget = VRAMBudget(cache, kv, expert_bytes=64, kv_bytes_per_token=2*4*32*2*2)
+    action = budget.check()
+
+    assert action["should_rebalance"] is False
+
+
+def test_vram_budget_grow_experts_after_request():
+    from tinyserve.vram_budget import VRAMBudget
+
+    cache = _make_cache(capacity=6)  # was shrunk from 10
+
+    from tinyserve.static_kv_cache import StaticKVCache
+    kv = StaticKVCache(
+        max_seq_len=100, num_layers=2, num_kv_heads=4,
+        head_dim=32, device=torch.device("cpu")
+    )
+    kv._seq_lens[0] = 0  # empty after request completion
+    kv._seq_lens[1] = 0
+
+    budget = VRAMBudget(cache, kv, expert_bytes=64, kv_bytes_per_token=2*4*32*2*2,
+                        max_expert_capacity=10)
+    action = budget.check()
+
+    assert action["should_rebalance"] is True
+    assert action["direction"] == "grow_experts"
