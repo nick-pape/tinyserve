@@ -251,6 +251,7 @@ def offload_model(
     ram_cache_gb: float = 0,
     kv_offload: bool = False,
     buddy_table_path: str | None = None,
+    imatrix_path: str | None = None,
 ) -> torch.nn.Module:
     """Offload MoE experts from an HF model to CPU with GPU LRU cache.
 
@@ -381,6 +382,17 @@ def offload_model(
     else:
         model._vram_budget = None
 
+    # Seed cache from imatrix activation data (eliminates cold-start phase).
+    if imatrix_path is not None and cache is not None:
+        import os
+        from .imatrix import parse_imatrix_dat, rank_experts_from_imatrix, seed_cache_from_ranking
+        if not os.path.isfile(imatrix_path):
+            raise FileNotFoundError(f"imatrix file not found: {imatrix_path}")
+        counts = parse_imatrix_dat(imatrix_path)
+        ranking = rank_experts_from_imatrix(counts, store.num_layers, store.num_experts)
+        n_seeded = seed_cache_from_ranking(cache, store, ranking)
+        logger.info("imatrix seeding: pre-loaded %d experts into cache from %s", n_seeded, imatrix_path)
+
     # Load buddy tables for miss substitution
     if buddy_table_path is not None:
         import json
@@ -436,6 +448,7 @@ def load_and_offload(
     ram_cache_gb: float = 0,
     kv_offload: bool = False,
     buddy_table_path: str | None = None,
+    imatrix_path: str | None = None,
     **hf_kwargs,
 ) -> torch.nn.Module:
     """Load a HuggingFace MoE model and immediately offload its experts.
@@ -495,4 +508,5 @@ def load_and_offload(
         ram_cache_gb=ram_cache_gb,
         kv_offload=kv_offload,
         buddy_table_path=buddy_table_path,
+        imatrix_path=imatrix_path,
     )

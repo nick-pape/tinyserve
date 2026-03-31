@@ -516,6 +516,26 @@ class GenericExpertStore:
         """Return raw packed expert data from CPU store (pinned memory)."""
         return self._data[layer_idx, expert_idx]
 
+    def copy_to_buffer_slot(
+        self,
+        cache: "GenericLRUCache",
+        slot: int,
+        layer_idx: int,
+        expert_idx: int,
+    ) -> None:
+        """Copy expert data directly into a cache slot (no intermediate buffer).
+
+        Used by imatrix seeding to pre-populate the GPU cache without
+        allocating a temporary GenericExpertBuffer per expert.
+        """
+        if not self._fp8:
+            cache._packed[slot].copy_(self._data[layer_idx, expert_idx])
+            return
+        # FP8 path: dequantize via a temporary buffer, then write to slot.
+        buf = self.allocate_buffer(cache.device)
+        self.copy_to_buffer(buf, layer_idx, expert_idx)
+        cache._packed[slot].copy_(buf.packed)
+
     def copy_to_buffer(
         self,
         buf: "GenericExpertBuffer",
