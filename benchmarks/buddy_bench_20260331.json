@@ -1,0 +1,22 @@
+{
+  "cold": {
+    "hr": 0.8752,
+    "tps": 9.3
+  },
+  "code": {
+    "hr": 0.8437,
+    "tps": 9.0
+  },
+  "creative": {
+    "hr": 0.8926,
+    "tps": 10.3
+  },
+  "multilingual": {
+    "hr": 0.9308,
+    "tps": 10.2
+  },
+  "conversation": {
+    "hr": 0.8359,
+    "tps": 8.6
+  }
+}

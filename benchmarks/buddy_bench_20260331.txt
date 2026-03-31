@@ -1,0 +1,12 @@
+=== Benchmark: LFRU + CPU-on-miss + Buddy Tables ===
+Cache: 238 slots, policy=lfru, buddy tables=loaded
+
+Domain             HR%   tok/s
+--------------------------------
+cold            87.5%    9.3
+code            84.4%    9.0
+creative        89.3%   10.3
+multilingual    93.1%   10.2
+conversation    83.6%    8.6
+
+Done.
