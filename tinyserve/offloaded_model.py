@@ -141,7 +141,7 @@ class OffloadedModel(nn.Module):
         softmax_order: str = "topk_then_softmax",
         first_moe_layer: int = 0,
         model_id: str | None = None,
-        cache_policy: str = "lru",
+        cache_policy: str = "lfru",
         fp8: bool = True,
         adaptive_fate: bool = True,
         profiler: "OffloadProfiler | None" = None,
