@@ -250,6 +250,7 @@ def offload_model(
     disk_offload: bool = False,
     ram_cache_gb: float = 0,
     kv_offload: bool = False,
+    buddy_table_path: str | None = None,
 ) -> torch.nn.Module:
     """Offload MoE experts from an HF model to CPU with GPU LRU cache.
 
@@ -267,6 +268,8 @@ def offload_model(
         cache_policy: eviction policy for the expert cache ('lru', 'slru',
             'lfu', 'lfru', 'fifo', 'ls', or 'dali'). Default 'lfru'.
         kv_offload: store KV cache on CPU pinned memory (zero VRAM).
+        buddy_table_path: path to JSON buddy table (from calibrate_buddies.py).
+            When provided, cache misses try buddy substitution before CPU compute.
             All VRAM goes to expert cache. PCIe transfer (~0.25ms at 1K ctx)
             is hidden behind expert compute (~5ms/layer).
 
@@ -363,6 +366,21 @@ def offload_model(
         p.cache = cache
         p.cache_bias = cache_bias
 
+    # Load buddy tables for miss substitution
+    if buddy_table_path is not None:
+        import json
+        from .buddy_experts import BuddyTable
+        with open(buddy_table_path) as f:
+            buddy_data = json.load(f)
+        for p in offloaded.pipelines:
+            # buddy_data is keyed by layer index string
+            # All pipelines share the same buddy tables (one per layer)
+            p._buddy_tables = {}
+            for layer_str, expert_buddies in buddy_data.items():
+                buddies = {int(eid): bl for eid, bl in expert_buddies.items()}
+                p._buddy_tables[int(layer_str)] = BuddyTable(buddies)
+        logger.info("Buddy tables loaded from %s (%d layers)", buddy_table_path, len(buddy_data))
+
     # Start background eager fill: load all experts from mmap into pinned RAM.
     # Runs concurrently with the first inference requests. Only when disk_offload
     # is active and a RAM cache was created.
@@ -396,6 +414,7 @@ def load_and_offload(
     disk_offload: bool = False,
     ram_cache_gb: float = 0,
     kv_offload: bool = False,
+    buddy_table_path: str | None = None,
     **hf_kwargs,
 ) -> torch.nn.Module:
     """Load a HuggingFace MoE model and immediately offload its experts.
@@ -404,9 +423,8 @@ def load_and_offload(
         model_id: HuggingFace repo id or local path
         device: GPU device
         cache_capacity: expert slots in VRAM (0 = auto)
-        cache_policy: 'lru', 'slru', 'lfu', 'lfru', 'fifo', or 'ls' (least-stale, default)
-        flash_attention: use flash_attention_2 if available (default True)
-        torch_dtype: weight dtype (default bfloat16)
+        cache_policy: 'lru', 'slru', 'lfu', 'lfru', 'fifo', or 'ls'
+        buddy_table_path: path to JSON buddy table for miss substitution
         **hf_kwargs: passed through to AutoModelForCausalLM.from_pretrained
     """
     from transformers import AutoModelForCausalLM
@@ -453,4 +471,5 @@ def load_and_offload(
         disk_offload=disk_offload,
         ram_cache_gb=ram_cache_gb,
         kv_offload=kv_offload,
+        buddy_table_path=buddy_table_path,
     )

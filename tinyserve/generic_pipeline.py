@@ -332,7 +332,8 @@ class GenericExpertPipeline:
         self.ram_cache = ram_cache
         self.cpu_expert = cpu_expert
         self.cpu_on_miss: bool = False
-        self.buddy_table = None  # Set externally after profiling
+        self.buddy_table = None  # Single table (legacy). Set externally.
+        self._buddy_tables: dict | None = None  # Per-layer tables from calibration
         self.cache_bias: float = 0.0  # logit bias magnitude for cache-aware routing (I4)
         self.profiler: OffloadProfiler | None = None
         # Precomputed param refs for zero-copy forward from cache slots.
@@ -569,13 +570,14 @@ class GenericExpertPipeline:
                 eid = expert_ids_list[i]
 
                 # BuddyMoE: try cached substitute first (zero stall).
-                if self.buddy_table is not None and cache is not None:
+                buddy_tbl = (self._buddy_tables or {}).get(layer_idx) or self.buddy_table
+                if buddy_tbl is not None and cache is not None:
                     if cache._slot_map is not None and layer_idx < cache._slot_map.shape[0]:
                         cached_mask = cache._slot_map[layer_idx] >= 0
                         cached_experts = set(torch.where(cached_mask)[0].tolist())
                     else:
                         cached_experts = set()
-                    buddy_eid = self.buddy_table.find_cached_buddy(eid, cached_experts)
+                    buddy_eid = buddy_tbl.find_cached_buddy(eid, cached_experts)
                     if buddy_eid is not None:
                         buddy_slot = cache.lookup(layer_idx, buddy_eid)
                         if buddy_slot is not None:

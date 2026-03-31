@@ -1,0 +1,34 @@
+=== Buddy Expert Calibration ===
+Running 28 prompts to collect routing data...
+  10/28 prompts done
+  20/28 prompts done
+
+Collected routing for 24 layers
+  Layer  0: top pair E1-E23 (coact=7), buddies of E0=[8, 10, 24]
+  Layer  1: top pair E11-E28 (coact=10), buddies of E0=[11, 28, 2]
+  Layer  2: top pair E10-E31 (coact=12), buddies of E0=[22, 21, 20]
+  Layer  3: top pair E23-E31 (coact=12), buddies of E0=[25, 28, 29]
+  Layer  4: top pair E14-E24 (coact=11), buddies of E0=[24, 14, 25]
+  Layer  5: top pair E6-E31 (coact=7), buddies of E0=[22, 21, 20]
+  Layer  6: top pair E2-E9 (coact=11), buddies of E0=[11, 15, 26]
+  Layer  7: top pair E5-E29 (coact=16), buddies of E0=[8, 5, 1]
+  Layer  8: top pair E17-E20 (coact=22), buddies of E0=[22, 21, 20]
+  Layer  9: top pair E15-E16 (coact=21), buddies of E0=[22, 21, 20]
+  Layer 10: top pair E19-E25 (coact=27), buddies of E0=[22, 21, 20]
+  Layer 11: top pair E14-E25 (coact=13), buddies of E0=[22, 21, 20]
+  Layer 12: top pair E8-E21 (coact=28), buddies of E0=[22, 21, 20]
+  Layer 13: top pair E5-E10 (coact=13), buddies of E0=[21, 3, 14]
+  Layer 14: top pair E6-E16 (coact=28), buddies of E0=[6, 16, 18]
+  Layer 15: top pair E1-E18 (coact=24), buddies of E0=[22, 21, 20]
+  Layer 16: top pair E2-E31 (coact=21), buddies of E0=[22, 21, 20]
+  Layer 17: top pair E5-E14 (coact=22), buddies of E0=[22, 21, 20]
+  Layer 18: top pair E1-E18 (coact=20), buddies of E0=[1, 14, 18]
+  Layer 19: top pair E6-E13 (coact=13), buddies of E0=[6, 17, 7]
+  Layer 20: top pair E12-E23 (coact=16), buddies of E0=[22, 21, 20]
+  Layer 21: top pair E9-E10 (coact=18), buddies of E0=[22, 21, 20]
+  Layer 22: top pair E13-E26 (coact=18), buddies of E0=[13, 26, 16]
+  Layer 23: top pair E14-E16 (coact=17), buddies of E0=[22, 21, 20]
+
+Buddy tables saved to benchmarks/buddy_tables_gptoss20b.json
+Layers with tables: 24
+Done.
