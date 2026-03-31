@@ -68,3 +68,14 @@ def test_unique_experts_per_step():
     step_stats = cache.end_step()
     assert step_stats["unique_experts_accessed"] == 2
     assert step_stats["total_lookups"] == 3
+
+
+def test_deferred_slot_updates():
+    cache = _make_cache(capacity=4, num_layers=2, num_experts=8)
+    # Allocate several experts
+    for eid in range(4):
+        cache.allocate(0, eid)
+    # Slot map should reflect all allocations after flush
+    cache.flush_slot_updates()
+    for eid in range(4):
+        assert cache.lookup(0, eid) is not None

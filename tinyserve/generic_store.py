@@ -587,6 +587,7 @@ class GenericLRUCache:
         self._slot_map_dims = (num_layers, num_experts)
         if num_layers > 1 or num_experts > 1:
             self._slot_map = torch.full((num_layers, num_experts), -1, dtype=torch.int32, device=device)
+        self._pending_slot_writes: dict[tuple[int, int], int] = {}  # (layer, expert) -> slot or -1
 
     def lookup(self, layer_idx: int, expert_idx: int) -> int | None:
         slot = self._policy.lookup((layer_idx, expert_idx))
@@ -637,12 +638,26 @@ class GenericLRUCache:
         else:
             evict_key, slot = self._policy.select_evict()
             self._policy.remove(evict_key)
-            if self._slot_map is not None:
-                self._slot_map[evict_key[0], evict_key[1]] = -1
+            self._pending_slot_writes[evict_key] = -1
         self._policy.insert(key, slot)
         self._ensure_slot_map(layer_idx, expert_idx)
-        self._slot_map[layer_idx, expert_idx] = slot
+        self._pending_slot_writes[key] = slot
         return slot
+
+    def flush_slot_updates(self):
+        """Batch-apply deferred slot_map writes. Call once per decode step."""
+        if not self._pending_slot_writes:
+            return
+        if self._slot_map is None:
+            self._pending_slot_writes.clear()
+            return
+
+        items = list(self._pending_slot_writes.items())
+        layers = torch.tensor([k[0] for k, _ in items], dtype=torch.long, device=self.device)
+        experts = torch.tensor([k[1] for k, _ in items], dtype=torch.long, device=self.device)
+        slots = torch.tensor([v for _, v in items], dtype=torch.int32, device=self.device)
+        self._slot_map.index_put_((layers, experts), slots)
+        self._pending_slot_writes.clear()
 
     def lookup_slots(self, layer_idx: int, expert_ids: torch.Tensor) -> torch.Tensor:
         """GPU tensor cache lookup — no CUDA sync.
