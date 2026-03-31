@@ -79,7 +79,11 @@ class GGUFReader:
         self._metadata: dict = {}
         self._data_offset: int = 0
         self.version: int = 0
-        self._parse()
+        try:
+            self._parse()
+        except Exception:
+            self._file.close()
+            raise
 
     def _parse(self):
         magic = struct.unpack("<I", self._file.read(4))[0]

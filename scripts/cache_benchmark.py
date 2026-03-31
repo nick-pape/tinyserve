@@ -144,13 +144,15 @@ def _reset_stats(cache):
 
 
 def run_cold_start(model, tok, cache, gen_tokens=30):
-    """Phase 1: Cold start — first prompt in each domain, cache empty."""
-    print("\n=== Phase 1: Cold Start (diverse first prompts) ===")
-    _reset_stats(cache)
+    """Phase 1: Sequential diverse prompts — each prompt starts with a truly empty cache."""
+    print("\n=== Phase 1: Sequential Diverse Prompts (cold cache per prompt) ===")
 
     results = []
     for prompt in COLD_START:
-        _reset_stats(cache)
+        if hasattr(cache, "clear"):
+            cache.clear()
+        else:
+            _reset_stats(cache)
         text, n, elapsed = _generate(model, tok, prompt, max_tokens=gen_tokens)
         stats = _collect_stats(cache)
         domain = prompt[:30] + "..."

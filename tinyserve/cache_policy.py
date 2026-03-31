@@ -121,7 +121,6 @@ class LFUPolicy(CachePolicy):
     def __init__(self) -> None:
         self._data: dict[tuple, tuple[int, int]] = {}
         self._heap: list[tuple[int, tuple]] = []
-        self._counter = 0
 
     def lookup(self, key: tuple) -> int | None:
         if key not in self._data:

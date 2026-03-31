@@ -743,6 +743,17 @@ class GenericLRUCache:
         self._layer_miss_latencies.clear()
         self._expert_access_count.clear()
 
+    def clear(self):
+        """Evict all entries. Cache is empty after this call."""
+        while len(self._policy) > 0:
+            key, slot = self._policy.select_evict()
+            self._policy.remove(key)
+            self._free_slots.append(slot)
+        if self._slot_map_cpu is not None:
+            self._slot_map_cpu[:] = -1
+            self._slot_map_dirty = True
+        self.reset_stats()
+
     @staticmethod
     def estimate_capacity(available_bytes: int, expert_bytes: int) -> int:
         return available_bytes // expert_bytes

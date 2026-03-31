@@ -15,3 +15,6 @@ downloads/
 .pytest_cache/
 docs/
 *.sh
+tinyserve/*.so
+tinyserve/*.c
+!tinyserve/_fast_cache.pyx

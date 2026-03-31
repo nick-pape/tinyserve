@@ -16,7 +16,7 @@ Measured with industry-standard methodology: diverse prompts across 5 domains, c
 
 | Workload | Hit rate | tok/s | Source |
 |---|---|---|---|
-| Cold start (8 diverse prompts) | 79-94% | 8-13 | `miss_penalty_20260331.json` |
+| Sequential diverse prompts (8 domains, cold cache per prompt) | 93-95% | 10-13 | `cpu_slotmap_bench_20260331` |
 | Sustained code | 85% | 8-11 | same |
 | Sustained math | 84% | 8-11 | same |
 | Sustained creative | 90% | 10-13 | same |

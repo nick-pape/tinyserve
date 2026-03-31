@@ -141,8 +141,7 @@ def _build_inline_forward(layout, act_fn):
     gu_needs_t = gu_shape[0] == hidden_dim
     # For down_proj: maps intermediate → hidden, so intermediate is input
     # The template checks: if w.shape[0] == gated.shape[-1] (intermediate_dim)
-    _intermediate_dim = hidden_dim  # for gpt-oss: hidden==intermediate, but check from gate_up  # noqa: F841
-    # Actually intermediate = max(gu_shape) // 2 for interleaved, or just check dn_shape
+    # intermediate = max(gu_shape) // 2 for interleaved, or just check dn_shape
     # The template does: if w_dn.shape[0] == gated.shape[-1]. gated = intermediate_size.
     # For gate_up: output is 2*intermediate. After SwiGLU: intermediate.
     # So gated_dim = max(gu_shape) // 2 (chunk) or max(gu_shape) // 2 (interleaved)
@@ -260,30 +259,6 @@ def _build_gpu_int4_forward(layout, act_fn):
     # TODO: enable when VRAM headroom detection is implemented.
     return None
 
-    from .gpu_int4 import HAS_INT4_GPU
-
-    if not HAS_INT4_GPU:
-        return None
-
-    specs = layout.specs
-    if "gate_up_proj_scales" not in specs:
-        return None
-
-    from .gpu_int4 import GPUINT4Forward
-
-    fwd = GPUINT4Forward(layout, group_size=32, act_fn=act_fn)
-
-    def _forward(packed, h):
-        try:
-            return fwd.forward(h, packed)
-        except torch.cuda.OutOfMemoryError:
-            # Not enough VRAM for INT4 conversion — fall back to template forward
-            fwd._int4_cache.clear()
-            torch.cuda.empty_cache()
-            return None  # caller falls back to forward_from_packed
-
-    return _forward
-
 
 _DTYPE_TO_INT = {
     torch.uint8: 0,
@@ -393,7 +368,6 @@ class GenericExpertPipeline:
         self.ram_cache = ram_cache
         self.cpu_expert = cpu_expert
         self.cpu_on_miss: bool = False
-        self.buddy_table = None  # Single table (legacy). Set externally.
         self._buddy_tables: dict | None = None  # Per-layer tables from calibration
         self.cache_bias: float = 0.0  # logit bias magnitude for cache-aware routing (I4)
         self.profiler: OffloadProfiler | None = None
@@ -566,9 +540,13 @@ class GenericExpertPipeline:
                         # Update policy recency (Python-only, no GPU sync).
                         cache._policy.lookup((layer_idx, eid))
                         cache.hits += 1
+                        cache._layer_hits[layer_idx] = cache._layer_hits.get(layer_idx, 0) + 1
+                        cache._expert_access_count[(layer_idx, eid)] = cache._expert_access_count.get((layer_idx, eid), 0) + 1
                     else:
                         misses.append(i)
                         cache.misses += 1
+                        cache._layer_misses[layer_idx] = cache._layer_misses.get(layer_idx, 0) + 1
+                        cache._expert_access_count[(layer_idx, eid)] = cache._expert_access_count.get((layer_idx, eid), 0) + 1
         else:
             # Fallback: original Python path for list inputs or old-style cache.
             if isinstance(expert_ids, torch.Tensor):
@@ -655,11 +633,11 @@ class GenericExpertPipeline:
                 eid = expert_ids_list[i]
 
                 # BuddyMoE: try cached substitute first (zero stall).
-                buddy_tbl = (self._buddy_tables or {}).get(layer_idx) or self.buddy_table
+                buddy_tbl = (self._buddy_tables or {}).get(layer_idx)
                 if buddy_tbl is not None and cache is not None:
-                    if cache._slot_map is not None and layer_idx < cache._slot_map.shape[0]:
-                        cached_mask = cache._slot_map[layer_idx] >= 0
-                        cached_experts = set(torch.where(cached_mask)[0].tolist())
+                    if cache._slot_map_cpu is not None and layer_idx < cache._slot_map_cpu.shape[0]:
+                        cached_experts = set(int(e) for e in range(cache._slot_map_cpu.shape[1])
+                                            if cache._slot_map_cpu[layer_idx, e] >= 0)
                     else:
                         cached_experts = set()
                     buddy_eid = buddy_tbl.find_cached_buddy(eid, cached_experts)

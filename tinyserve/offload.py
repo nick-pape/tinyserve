@@ -277,6 +277,8 @@ def offload_model(
         The same model object with experts offloaded. Call model(input_ids)
         as normal — expert loading is handled transparently.
     """
+    if cache_capacity < 0:
+        raise ValueError("cache_capacity must be >= 0")
     device = torch.device(device)
     if device.type == "cuda" and not torch.cuda.is_available():
         raise RuntimeError(
@@ -369,9 +371,15 @@ def offload_model(
     # Load buddy tables for miss substitution
     if buddy_table_path is not None:
         import json
+        import os
         from .buddy_experts import BuddyTable
+        if not os.path.isfile(buddy_table_path):
+            raise FileNotFoundError(f"Buddy table not found: {buddy_table_path}")
         with open(buddy_table_path) as f:
-            buddy_data = json.load(f)
+            try:
+                buddy_data = json.load(f)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Invalid buddy table JSON: {e}") from e
         for p in offloaded.pipelines:
             # buddy_data is keyed by layer index string
             # All pipelines share the same buddy tables (one per layer)
@@ -427,6 +435,8 @@ def load_and_offload(
         buddy_table_path: path to JSON buddy table for miss substitution
         **hf_kwargs: passed through to AutoModelForCausalLM.from_pretrained
     """
+    if cache_capacity < 0:
+        raise ValueError("cache_capacity must be >= 0")
     from transformers import AutoModelForCausalLM
 
     if attn_implementation is not None:
