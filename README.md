@@ -12,30 +12,30 @@ All numbers from RTX PRO 2000 8 GB **laptop** GPU, GPT-OSS-20B (MXFP4, 238 cache
 
 ### Cache hit rates (diverse workloads)
 
-Measured with industry-standard methodology: diverse prompts across 5 domains, cold start, domain shifts. NOT measured on warm cache with repeated text.
+Measured with industry-standard methodology: diverse prompts across 5 domains, cold start, domain shifts. NOT measured on warm cache with repeated text. Policy: LFRU with CPU-on-miss (miss penalty ~2ms vs ~20ms for cold loads).
 
 | Workload | Hit rate | tok/s | Source |
 |---|---|---|---|
-| Cold start (8 diverse prompts) | 82-92% | 7-9 | `cache_benchmark_20260326.json` |
-| Sustained code | 86% | 7-8 | same |
-| Sustained math | 86% | 7-8 | same |
-| Sustained creative | 89% | 6-9 | same |
-| Sustained multilingual | 92% | 8-9 | same |
-| Sustained conversation | 84% | 7-8 | same |
-| Domain shift (creative→math) | 85% (-5.4%) | — | same |
-| Domain shift (multilingual→code) | 86% (-5.8%) | — | same |
+| Cold start (8 diverse prompts) | 79-94% | 8-13 | `miss_penalty_20260331.json` |
+| Sustained code | 85% | 8-11 | same |
+| Sustained math | 84% | 8-11 | same |
+| Sustained creative | 90% | 10-13 | same |
+| Sustained multilingual | 95% | 10-13 | same |
+| Sustained conversation | 85% | 7-12 | same |
+| Domain shift (creative→math) | 84% (-9.6%) | — | same |
+| Domain shift (multilingual→code) | 86% (-9.4%) | — | same |
 
 ### Per-layer hit rate
 
-Cache slots are consumed disproportionately by early layers, starving deeper layers:
+LFRU rebalances cache budget toward deeper layers compared to plain LRU:
 
 | Layers | Hit rate | Note |
 |---|---|---|
-| 0-10 | 28-41% | Early layers get most cache budget |
-| 11-17 | 11-32% | Middle layers partially served |
-| 18-23 | 0-10% | Deep layers nearly always miss |
+| 0-10 | 39-68% | Early layers |
+| 11-17 | 56-74% | Middle layers |
+| 18-23 | 54-69% | Deep layers (was 0-10% with LRU) |
 
-This is with 238 slots across 768 total experts (31% coverage). The per-layer distribution is the primary optimization target.
+This is with 238 slots across 768 total experts (31% coverage). 7-policy comparison in `benchmarks/comprehensive_20260326.txt`: LFRU wins on deep-layer coverage (52% vs LRU's 8%) at comparable overall HR.
 
 ### Decode speed (post-prefill)
 
@@ -100,7 +100,7 @@ docker run --gpus all -p 8000:8000 tinyserve
 ## How it works
 
 1. **Expert store** — Weights packed as flat byte buffers in pinned CPU memory. MXFP4 loaded as raw uint8 blocks + scales from safetensors (no dequantization).
-2. **GPU LRU cache** — Pre-allocated VRAM tensor. Hit: template params set to cache slot views (zero-copy). Miss: double-buffered H2D pipeline.
+2. **GPU LFRU cache** — Pre-allocated VRAM tensor. Hit: template params set to cache slot views (zero-copy). Miss: CPU-on-miss path reduces penalty from ~20ms to ~2ms; double-buffered H2D pipeline for async loads.
 3. **FATE cross-layer prefetch** — Current layer's hidden states predict next layer's experts. Prefetch overlaps with attention compute.
 4. **Temporal routing fallback** — After first token, reuse previous token's routing. Matches or exceeds FATE accuracy.
 5. **Batched expert prefill** — Groups tokens by expert, loads each once. Reduces prefill expert loads from O(seq_len × top_k) to O(num_experts).
@@ -137,7 +137,7 @@ model = load_and_offload(
 - NVIDIA only (CUDA streams, Triton PTX)
 - Single GPU only
 - Batch size 1 decode only (template weight swapping is not batch-safe)
-- Deep layers (18-23) have near-zero cache hit rates at 238 slots
+- Deep layers (18-23) had near-zero hit rates with LRU; LFRU brings them to 54-69% at 238 slots
 - Prefill is attention-dominated, not improved by expert caching
 - GGUF loader not tested on real files
 
@@ -164,7 +164,7 @@ python scripts/benchmark.py --fate-diagnostic
 
 ```bash
 pip install -e ".[dev]"
-python -m pytest tests/ --ignore=tests/test_hf_models.py -x -q   # 330 tests
+python -m pytest tests/ --ignore=tests/test_hf_models.py -x -q   # 335 tests
 ```
 
 ## License
