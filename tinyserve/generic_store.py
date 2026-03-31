@@ -754,6 +754,50 @@ class GenericLRUCache:
             self._slot_map_dirty = True
         self.reset_stats()
 
+    def shrink(self, n_slots: int) -> int:
+        """Reduce capacity by n_slots. Evicts LRU experts as needed.
+
+        Returns bytes freed (n_slots × expert_bytes).
+        """
+        if n_slots <= 0 or n_slots > self.capacity:
+            return 0
+
+        # Evict LRU experts until we have n_slots free
+        while len(self._free_slots) < n_slots and len(self._policy) > 0:
+            key, slot = self._policy.select_evict()
+            self._policy.remove(key)
+            self._free_slots.append(slot)
+            if self._slot_map_cpu is not None:
+                self._slot_map_cpu[key[0], key[1]] = -1
+                self._slot_map_dirty = True
+
+        # Take the n_slots highest-numbered free slots to remove from the end
+        self._free_slots.sort(reverse=True)
+        self._free_slots = self._free_slots[n_slots:]
+
+        new_capacity = self.capacity - n_slots
+        self._packed = self._packed[:new_capacity].clone()
+        self.capacity = new_capacity
+
+        if self._slot_map_dirty:
+            self.flush_slot_updates()
+
+        return n_slots * self.expert_bytes
+
+    def grow(self, n_slots: int) -> None:
+        """Increase capacity by n_slots."""
+        if n_slots <= 0:
+            return
+        old_capacity = self.capacity
+        new_capacity = old_capacity + n_slots
+        new_packed = torch.empty(
+            new_capacity, self.expert_bytes, dtype=torch.uint8, device=self.device
+        )
+        new_packed[:old_capacity] = self._packed
+        self._packed = new_packed
+        self.capacity = new_capacity
+        self._free_slots.extend(range(old_capacity, new_capacity))
+
     @staticmethod
     def estimate_capacity(available_bytes: int, expert_bytes: int) -> int:
         return available_bytes // expert_bytes
