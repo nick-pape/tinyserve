@@ -376,7 +376,7 @@ def _dequant_tensor(
         t = torch.frombuffer(bytearray(raw), dtype=torch.float16).reshape(info.shape)
         return t.to(torch.bfloat16).to(device)
 
-    if ggml_type == 14:  # Q4_K
+    if ggml_type == 12:  # Q4_K
         from .gguf_quant import parse_q4k_blocks
 
         w_float = parse_q4k_blocks(raw, (info.shape[0], info.shape[1]))
@@ -438,7 +438,7 @@ def _dequant_fused_tensor(
         t = torch.frombuffer(bytearray(raw), dtype=torch.float16).reshape(shape_3d)
         return t.to(torch.bfloat16).to(device)
 
-    if ggml_type == 14:  # Q4_K — 256-element blocks, 144 bytes each
+    if ggml_type == 12:  # Q4_K — 256-element blocks, 144 bytes each
         from .gguf_quant import parse_q4k_block
 
         n_blocks = n_elements // 256
