@@ -52,14 +52,3 @@ def dequant_mxfp4(
     """Dequantize MXFP4, returning [in_features, out_features] (transposed for F.linear)."""
     return dequant_mxfp4_no_transpose(blocks, scales, dtype).T.contiguous()
 
-
-def dequant_single_expert(
-    gate_up_blocks: torch.Tensor,
-    gate_up_scales: torch.Tensor,
-    down_blocks: torch.Tensor,
-    down_scales: torch.Tensor,
-    dtype: torch.dtype = torch.bfloat16,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    gate_up_w = dequant_mxfp4(gate_up_blocks, gate_up_scales, dtype)
-    down_w = dequant_mxfp4(down_blocks, down_scales, dtype)
-    return gate_up_w, down_w

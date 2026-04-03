@@ -4,8 +4,11 @@ Takes any nn.Module with MoE layers, extracts expert weights to CPU,
 installs offloaded dispatch hooks, moves non-expert weights to GPU.
 """
 
+from __future__ import annotations
+
 import copy
 import logging
+from typing import TYPE_CHECKING
 
 import torch
 import torch.nn as nn
@@ -14,6 +17,9 @@ import torch.nn.functional as F
 from .expert_pipeline import ExpertPipeline
 from .expert_store import ExpertStore, _is_qtensor
 from .mxfp4 import dequant_mxfp4_no_transpose
+
+if TYPE_CHECKING:
+    from .expert_store import TensorLayout
 from .profiler import OffloadProfiler
 
 logger = logging.getLogger(__name__)
@@ -326,9 +332,8 @@ class _FusedExpertTemplate(nn.Module):
         self._is_mxfp4 = "gate_up_proj_scales" in self._param_names
 
     @classmethod
-    def from_layout(cls, layout: "TensorLayout", fused_container: nn.Module) -> "_FusedExpertTemplate":  # noqa: F821
+    def from_layout(cls, layout: TensorLayout, fused_container: nn.Module) -> _FusedExpertTemplate:
         """Create template from a TensorLayout (used with native safetensors loading)."""
-        from .expert_store import TensorLayout  # noqa: F401
 
         obj = cls.__new__(cls)
         nn.Module.__init__(obj)

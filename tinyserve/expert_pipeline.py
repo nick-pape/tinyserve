@@ -4,8 +4,11 @@ Works with any nn.Module expert: swaps weights from the buffer into a
 template module, calls forward(), accumulates weighted outputs.
 """
 
+from __future__ import annotations
+
 import logging
 from contextlib import nullcontext
+from typing import TYPE_CHECKING
 
 import torch
 import torch.nn as nn
@@ -14,13 +17,18 @@ from .expert_store import ExpertBuffer, ExpertStore, ExpertCache
 from .profiler import OffloadProfiler
 from .ram_cache import madvise_willneed
 
+if TYPE_CHECKING:
+    from .expert_store import TensorLayout
+
 logger = logging.getLogger(__name__)
 
 try:
     from .csrc import get_expert_loop as _get_expert_loop
 except Exception:
     logger.warning("C++ expert loop extension not available, using Python fallback")
-    _get_expert_loop = lambda: None  # noqa: E731
+
+    def _get_expert_loop():
+        return None
 
 try:
     from tinyserve._fast_cache import classify_hits_misses as _cython_classify_hits
@@ -84,7 +92,7 @@ def swap_weights_and_forward(
 
 def _precompute_param_refs(
     template: nn.Module,
-    layout: "TensorLayout",  # noqa: F821
+    layout: TensorLayout,
 ) -> list[tuple[nn.Parameter, int, int, tuple[int, ...], torch.dtype]]:
     """Precompute parameter references + offsets to avoid repeated string ops."""
     refs = []

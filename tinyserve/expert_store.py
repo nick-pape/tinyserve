@@ -820,7 +820,3 @@ class ExpertCache:
         self._packed = new_packed
         self.capacity = new_capacity
         self._free_slots.extend(range(old_capacity, new_capacity))
-
-    @staticmethod
-    def estimate_capacity(available_bytes: int, expert_bytes: int) -> int:
-        return available_bytes // expert_bytes
