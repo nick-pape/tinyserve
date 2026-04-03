@@ -355,6 +355,7 @@ class ExpertStore:
             from tqdm import tqdm
             shard_iter = tqdm(shard_files, desc="Loading expert shards", unit="shard")
         except ImportError:
+            logger.debug("tqdm not available, loading shards without progress bar")
             shard_iter = shard_files
         for shard_name in shard_iter:
             shard_path = os.path.join(model_dir, shard_name)

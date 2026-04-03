@@ -306,6 +306,25 @@ def _register_flashinfer_attention() -> str:
         return AttentionBackend.EAGER
 
 
+def _apply_offload_config(offload_config: TinyserveConfig, locals_dict: dict) -> dict:
+    """Merge TinyserveConfig fields into a kwargs dict.
+
+    Config fields set all corresponding local variables; attn_implementation
+    is only overridden when config provides a non-None value.
+    """
+    fields = [
+        "cache_capacity", "cache_policy", "cache_bias", "adaptive_fate",
+        "max_seq_len", "kv_dtype", "gpu_memory_utilization", "fp8",
+        "disk_offload", "ram_cache_gb", "kv_offload", "buddy_table_path",
+        "imatrix_path",
+    ]
+    for f in fields:
+        locals_dict[f] = getattr(offload_config, f)
+    if offload_config.attn_implementation is not None:
+        locals_dict["attn_implementation"] = offload_config.attn_implementation
+    return locals_dict
+
+
 _ROUTING_MAP: dict[str, RoutingSpec] = {
     "mixtral": RoutingSpec("router_native", False, "gate"),
     "qwen3_moe": RoutingSpec("router_native", False, "gate"),
@@ -371,20 +390,21 @@ def offload_model(
         as normal — expert loading is handled transparently.
     """
     if offload_config is not None:
-        cache_capacity = offload_config.cache_capacity
-        cache_policy = offload_config.cache_policy
-        cache_bias = offload_config.cache_bias
-        adaptive_fate = offload_config.adaptive_fate
-        max_seq_len = offload_config.max_seq_len
-        kv_dtype = offload_config.kv_dtype
-        gpu_memory_utilization = offload_config.gpu_memory_utilization
-        fp8 = offload_config.fp8
-        disk_offload = offload_config.disk_offload
-        ram_cache_gb = offload_config.ram_cache_gb
-        kv_offload = offload_config.kv_offload
-        buddy_table_path = offload_config.buddy_table_path
-        imatrix_path = offload_config.imatrix_path
-        attn_implementation = offload_config.attn_implementation
+        lv = _apply_offload_config(offload_config, locals())
+        cache_capacity = lv["cache_capacity"]
+        cache_policy = lv["cache_policy"]
+        cache_bias = lv["cache_bias"]
+        adaptive_fate = lv["adaptive_fate"]
+        max_seq_len = lv["max_seq_len"]
+        kv_dtype = lv["kv_dtype"]
+        gpu_memory_utilization = lv["gpu_memory_utilization"]
+        fp8 = lv["fp8"]
+        disk_offload = lv["disk_offload"]
+        ram_cache_gb = lv["ram_cache_gb"]
+        kv_offload = lv["kv_offload"]
+        buddy_table_path = lv["buddy_table_path"]
+        imatrix_path = lv["imatrix_path"]
+        attn_implementation = lv.get("attn_implementation", attn_implementation)
 
     if cache_capacity < 0:
         raise ValueError("cache_capacity must be >= 0")
@@ -589,21 +609,21 @@ def load_and_offload(
         **hf_kwargs: passed through to AutoModelForCausalLM.from_pretrained
     """
     if offload_config is not None:
-        cache_capacity = offload_config.cache_capacity
-        cache_policy = offload_config.cache_policy
-        cache_bias = offload_config.cache_bias
-        adaptive_fate = offload_config.adaptive_fate
-        max_seq_len = offload_config.max_seq_len
-        kv_dtype = offload_config.kv_dtype
-        gpu_memory_utilization = offload_config.gpu_memory_utilization
-        fp8 = offload_config.fp8
-        disk_offload = offload_config.disk_offload
-        ram_cache_gb = offload_config.ram_cache_gb
-        kv_offload = offload_config.kv_offload
-        buddy_table_path = offload_config.buddy_table_path
-        imatrix_path = offload_config.imatrix_path
-        if offload_config.attn_implementation is not None:
-            attn_implementation = offload_config.attn_implementation
+        lv = _apply_offload_config(offload_config, locals())
+        cache_capacity = lv["cache_capacity"]
+        cache_policy = lv["cache_policy"]
+        cache_bias = lv["cache_bias"]
+        adaptive_fate = lv["adaptive_fate"]
+        max_seq_len = lv["max_seq_len"]
+        kv_dtype = lv["kv_dtype"]
+        gpu_memory_utilization = lv["gpu_memory_utilization"]
+        fp8 = lv["fp8"]
+        disk_offload = lv["disk_offload"]
+        ram_cache_gb = lv["ram_cache_gb"]
+        kv_offload = lv["kv_offload"]
+        buddy_table_path = lv["buddy_table_path"]
+        imatrix_path = lv["imatrix_path"]
+        attn_implementation = lv.get("attn_implementation", attn_implementation)
 
     if cache_capacity < 0:
         raise ValueError("cache_capacity must be >= 0")
@@ -625,7 +645,7 @@ def load_and_offload(
 
                 attn_impl = AttentionBackend.FLASH_ATTENTION_2
             except ImportError:
-                # SDPA: fused kernel with O(n) memory, no torch.compile overhead.
+                logger.debug("flash_attn not available, using SDPA")
                 attn_impl = _register_sdpa_attention()
 
     model = AutoModelForCausalLM.from_pretrained(
