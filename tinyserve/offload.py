@@ -10,11 +10,18 @@ Usage:
 """
 
 import logging
+from typing import NamedTuple
 
 import torch
 
 from .model_registry import profile_from_config
 from ._model_hooks import OffloadedModel
+
+
+class RoutingSpec(NamedTuple):
+    softmax_order: str   # "router_native" | "softmax_then_topk"
+    returns_logits: bool  # whether router returns raw logits
+    router_attr: str     # attribute name on MoE block ("gate" | "router")
 
 logger = logging.getLogger(__name__)
 
@@ -218,19 +225,19 @@ def _register_flashinfer_attention() -> str:
         return "eager"
 
 
-_ROUTING_MAP = {
-    "mixtral": ("router_native", False, "gate"),
-    "qwen3_moe": ("router_native", False, "gate"),
-    "qwen2_moe": ("router_native", False, "gate"),
-    "deepseek_v3": ("router_native", False, "gate"),
-    "gpt_oss": ("router_native", True, "router"),
-    "olmoe": ("softmax_then_topk", True, "gate"),
-    "qwen3_5_moe": ("router_native", False, "gate"),
-    "qwen3_5_moe_text": ("router_native", False, "gate"),
-    "llama4": ("router_native", False, "gate"),
-    "kimi_k2": ("router_native", False, "gate"),
-    "dbrx": ("router_native", False, "gate"),
-    "phimoe": ("softmax_then_topk", False, "gate"),
+_ROUTING_MAP: dict[str, RoutingSpec] = {
+    "mixtral": RoutingSpec("router_native", False, "gate"),
+    "qwen3_moe": RoutingSpec("router_native", False, "gate"),
+    "qwen2_moe": RoutingSpec("router_native", False, "gate"),
+    "deepseek_v3": RoutingSpec("router_native", False, "gate"),
+    "gpt_oss": RoutingSpec("router_native", True, "router"),
+    "olmoe": RoutingSpec("softmax_then_topk", True, "gate"),
+    "qwen3_5_moe": RoutingSpec("router_native", False, "gate"),
+    "qwen3_5_moe_text": RoutingSpec("router_native", False, "gate"),
+    "llama4": RoutingSpec("router_native", False, "gate"),
+    "kimi_k2": RoutingSpec("router_native", False, "gate"),
+    "dbrx": RoutingSpec("router_native", False, "gate"),
+    "phimoe": RoutingSpec("softmax_then_topk", False, "gate"),
 }
 
 
@@ -291,7 +298,8 @@ def offload_model(
     profile = profile_from_config(effective_config)
     model_type = effective_config.model_type
 
-    softmax_order, returns_logits, router_attr = _ROUTING_MAP.get(model_type, ("softmax_then_topk", True, "gate"))
+    spec = _ROUTING_MAP.get(model_type, RoutingSpec("softmax_then_topk", True, "gate"))
+    softmax_order, returns_logits, router_attr = spec
 
     inner_model = model.model if hasattr(model, "model") else model
 
