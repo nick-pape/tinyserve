@@ -1,0 +1,12 @@
+=== Sliding Window KV Transfer Fix ===
+Slots: 177, KV: 32768, window: 128
+   ctx   tok/s   HR%
+----------------------
+    10    6.7  78%
+   100    4.6  84%
+   500    4.0  84%
+  1000    2.9  80%
+  2000    1.9  82%
+  4000    1.2  80%
+  8000    0.6  81%
+ 16000  ERR: CUDA out of memory. Tried to allocate 376.00 MiB. GPU 0 has 
