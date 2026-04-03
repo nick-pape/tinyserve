@@ -295,7 +295,7 @@ class StaticKVCache:
             self._v[layer_idx, :, :, window_start:seq_len].clone()
 
         # Also shift scales if INT8 quantization is active
-        if self._k_scales is not None:
+        if getattr(self, '_k_scales', None) is not None:
             self._k_scales[layer_idx, :, :, sink_end:max_kept] = \
                 self._k_scales[layer_idx, :, :, window_start:seq_len].clone()
             self._v_scales[layer_idx, :, :, sink_end:max_kept] = \
