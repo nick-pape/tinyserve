@@ -220,6 +220,7 @@ def _register_sdpa_attention() -> str:
             _, G, S, _ = key.shape
 
             if L == 1:
+                # Decode: single query position
                 k_decode = key
                 v_decode = value
                 if sliding_window is not None and S > sliding_window:
@@ -229,7 +230,17 @@ def _register_sdpa_attention() -> str:
                     query, k_decode, v_decode, attn_mask=None, dropout_p=0.0,
                     is_causal=False, scale=scaling, enable_gqa=True,
                 )
+            elif L > 1024:
+                # Long prefill: head-wise attention to avoid VRAM OOM.
+                # Process one GQA group at a time — peak VRAM is O(L × head_dim)
+                # instead of O(L × num_heads × head_dim).
+                from .head_attention import head_wise_sdpa
+                return head_wise_sdpa(
+                    query, key, value, scaling,
+                    sliding_window=sliding_window, is_causal=True,
+                )
             else:
+                # Short prefill: standard SDPA is faster
                 out = torch.nn.functional.scaled_dot_product_attention(
                     query, key, value, attn_mask=None, dropout_p=0.0,
                     is_causal=True, scale=scaling, enable_gqa=True,
