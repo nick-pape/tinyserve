@@ -14,7 +14,7 @@ import logging
 import torch
 
 from .model_registry import profile_from_config
-from .offloaded_model import OffloadedModel
+from ._model_hooks import OffloadedModel
 
 logger = logging.getLogger(__name__)
 

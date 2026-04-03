@@ -104,7 +104,7 @@ def test_mxfp4_linear_matches_reference():
     if not torch.cuda.is_available():
         pytest.skip("CUDA required")
 
-    from tinyserve.offloaded_model import _mxfp4_linear
+    from tinyserve._model_hooks import _mxfp4_linear
 
     torch.manual_seed(7)
     device = torch.device("cuda")

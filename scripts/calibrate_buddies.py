@@ -24,7 +24,7 @@ def main():
     log(f"Running {len(all_prompts)} prompts to collect routing data...")
 
     # Hook into the routing to capture expert selections per layer
-    from tinyserve.offloaded_model import _last_routing
+    from tinyserve._model_hooks import _last_routing
     routing_per_layer: dict[int, list[list[int]]] = {}
 
     # Generate tokens and collect routing

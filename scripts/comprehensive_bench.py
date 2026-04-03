@@ -84,7 +84,7 @@ import json, torch, sys
 sys.path.insert(0, ".")
 from transformers import AutoTokenizer
 from tinyserve.offload import load_and_offload
-from tinyserve.offloaded_model import get_fate_accuracy_by_layer, reset_fate_stats, reset_temporal_routing
+from tinyserve._model_hooks import get_fate_accuracy_by_layer, reset_fate_stats, reset_temporal_routing
 from scripts.prompts import COLD_START, CODE_PROMPTS, MATH_PROMPTS
 
 ADAPTIVE = {adaptive}

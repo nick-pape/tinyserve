@@ -9,7 +9,7 @@ from tests.test_e2e_offload import TinyMoEModel
 @requires_cuda
 def test_offloaded_model_from_hf_module():
     """OffloadedModel wraps an existing nn.Module and offloads its experts."""
-    from tinyserve.offloaded_model import OffloadedModel
+    from tinyserve._model_hooks import OffloadedModel
 
     torch.manual_seed(42)
     hidden, intermediate = 64, 128
@@ -52,7 +52,7 @@ def test_offloaded_model_from_hf_module():
 @requires_cuda
 def test_offloaded_model_generate():
     """OffloadedModel produces identical greedy tokens as reference."""
-    from tinyserve.offloaded_model import OffloadedModel
+    from tinyserve._model_hooks import OffloadedModel
 
     torch.manual_seed(99)
     hidden, intermediate = 64, 128
@@ -108,7 +108,7 @@ def test_offloaded_model_generate():
 @requires_cuda
 def test_cache_stats_accessible():
     """Cache hit/miss stats are accessible after inference."""
-    from tinyserve.offloaded_model import OffloadedModel
+    from tinyserve._model_hooks import OffloadedModel
 
     torch.manual_seed(7)
     model = TinyMoEModel(256, 32, 64, 1, 4, 2).to(torch.bfloat16)

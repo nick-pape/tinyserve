@@ -101,7 +101,7 @@ def run_benchmark(
     from transformers import AutoTokenizer
 
     from tinyserve.offload import load_and_offload
-    from tinyserve.offloaded_model import reset_temporal_routing
+    from tinyserve._model_hooks import reset_temporal_routing
 
     cap = 0 if no_cache else cache_capacity
     model = load_and_offload(
@@ -179,7 +179,7 @@ def run_context_scaling(
     from transformers import AutoTokenizer
 
     from tinyserve.offload import load_and_offload
-    from tinyserve.offloaded_model import reset_temporal_routing
+    from tinyserve._model_hooks import reset_temporal_routing
 
     if contexts is None:
         contexts = [10, 50, 100, 500, 1000, 2000, 3000]
@@ -418,7 +418,7 @@ def _run_trace(args) -> None:
     from transformers import AutoTokenizer
 
     from tinyserve.offload import load_and_offload
-    from tinyserve.offloaded_model import reset_temporal_routing
+    from tinyserve._model_hooks import reset_temporal_routing
 
     n_warmup = 5
     n_profile = 10
@@ -517,7 +517,7 @@ def _run_profile(args) -> None:
     from transformers import AutoTokenizer
 
     from tinyserve.offload import load_and_offload
-    from tinyserve.offloaded_model import reset_temporal_routing
+    from tinyserve._model_hooks import reset_temporal_routing
     from tinyserve.profiler import OffloadProfiler
 
     n_warmup = 20
@@ -808,7 +808,7 @@ def main():
         from transformers import AutoTokenizer
 
         from tinyserve.offload import load_and_offload
-        from tinyserve.offloaded_model import get_fate_accuracy_by_layer, reset_fate_stats, reset_temporal_routing
+        from tinyserve._model_hooks import get_fate_accuracy_by_layer, reset_fate_stats, reset_temporal_routing
 
         n_diag = 40
         policy = args.cache_policy if args.cache_policy else "lfru"

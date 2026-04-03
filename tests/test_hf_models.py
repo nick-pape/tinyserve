@@ -20,7 +20,7 @@ def _offload_and_compare(
     atol=0.02,
 ):
     """Shared helper: offload model, compare logits + autoregressive tokens."""
-    from tinyserve.offloaded_model import OffloadedModel
+    from tinyserve._model_hooks import OffloadedModel
 
     model = model_cls(config).to(torch.bfloat16).eval()
 
