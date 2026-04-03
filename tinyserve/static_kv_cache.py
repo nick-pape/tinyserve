@@ -258,3 +258,47 @@ class StaticKVCache:
 
     def __bool__(self):
         return self._seq_lens[0] > 0
+
+    def enable_streaming(self, sink_size: int = 4, window_size: int = 1024) -> None:
+        """Enable StreamingLLM-style KV eviction.
+
+        Keeps the first ``sink_size`` tokens (attention sinks) and the last
+        ``window_size`` tokens. Evicts everything in between. This caps
+        KV memory at ``(sink_size + window_size) × per_token_bytes``
+        regardless of total context length.
+
+        Based on StreamingLLM (arxiv 2309.17453).
+        """
+        self._streaming = True
+        self._sink_size = sink_size
+        self._window_size = window_size
+
+    def _evict_streaming(self, layer_idx: int) -> None:
+        """Compact KV to [sinks | recent_window] if streaming is enabled."""
+        if not getattr(self, '_streaming', False):
+            return
+        seq_len = self._seq_lens[layer_idx]
+        max_kept = self._sink_size + self._window_size
+        if seq_len <= max_kept:
+            return  # fits, no eviction needed
+
+        # Copy sink tokens (first N) and window tokens (last M)
+        # into positions 0..max_kept
+        sink_end = self._sink_size
+        window_start = seq_len - self._window_size
+
+        # Sinks are already at positions 0..sink_end — no copy needed
+        # Window needs to shift from window_start to sink_end
+        self._k[layer_idx, :, :, sink_end:max_kept] = \
+            self._k[layer_idx, :, :, window_start:seq_len].clone()
+        self._v[layer_idx, :, :, sink_end:max_kept] = \
+            self._v[layer_idx, :, :, window_start:seq_len].clone()
+
+        # Also shift scales if INT8 quantization is active
+        if self._k_scales is not None:
+            self._k_scales[layer_idx, :, :, sink_end:max_kept] = \
+                self._k_scales[layer_idx, :, :, window_start:seq_len].clone()
+            self._v_scales[layer_idx, :, :, sink_end:max_kept] = \
+                self._v_scales[layer_idx, :, :, window_start:seq_len].clone()
+
+        self._seq_lens[layer_idx] = max_kept
