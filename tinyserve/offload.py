@@ -341,7 +341,7 @@ def offload_model(
     kv_offload: bool = False,
     buddy_table_path: str | None = None,
     imatrix_path: str | None = None,
-) -> torch.nn.Module:
+) -> "OffloadedLM":
     """Offload MoE experts from an HF model to CPU with GPU LRU cache.
 
     Auto-detects model family from config and applies the correct
@@ -575,7 +575,7 @@ def load_and_offload(
     buddy_table_path: str | None = None,
     imatrix_path: str | None = None,
     **hf_kwargs,
-) -> torch.nn.Module:
+) -> "OffloadedLM":
     """Load a HuggingFace MoE model and immediately offload its experts.
 
     Args:

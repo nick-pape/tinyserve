@@ -33,7 +33,7 @@ def _build_expert_weights(num_layers, num_experts, hidden, intermediate, dtype=t
 
 
 @requires_cuda
-def test_template_expert_weight_swap():
+def test_weight_swap_produces_correct_expert_output():
     """Swapping weights into a template expert produces correct output."""
     from tinyserve.expert_pipeline import swap_weights_and_forward
     from tinyserve.expert_store import ExpertStore
@@ -67,7 +67,7 @@ def test_template_expert_weight_swap():
 
 
 @requires_cuda
-def test_generic_pipeline_matches_direct():
+def test_pipeline_output_matches_direct_expert_compute():
     """Full pipeline (cache + double-buffer) matches direct expert computation."""
     from tinyserve.expert_pipeline import ExpertPipeline
     from tinyserve.expert_store import ExpertStore
@@ -117,7 +117,7 @@ def test_generic_pipeline_matches_direct():
 
 
 @requires_cuda
-def test_cache_hits_match_misses():
+def test_repeated_expert_is_cache_hit():
     """Second call (all cache hits) produces identical output to first call (all misses)."""
     from tinyserve.expert_pipeline import ExpertPipeline
     from tinyserve.expert_store import ExpertStore
@@ -156,7 +156,7 @@ def test_cache_hits_match_misses():
 
 
 @requires_cuda
-def test_least_stale_hits_after_begin_pass():
+def test_previous_token_experts_are_hits_after_begin_pass():
     """LeastStalePolicy: after begin_pass(), experts from the previous token are hits."""
     from tinyserve.expert_pipeline import ExpertPipeline
     from tinyserve.expert_store import ExpertStore, ExpertCache
@@ -210,7 +210,7 @@ def test_least_stale_hits_after_begin_pass():
 
 
 @requires_cuda
-def test_multi_token():
+def test_pipeline_handles_multiple_tokens():
     """Pipeline handles multiple tokens correctly."""
     from tinyserve.expert_pipeline import ExpertPipeline
     from tinyserve.expert_store import ExpertStore

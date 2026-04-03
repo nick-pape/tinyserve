@@ -29,7 +29,7 @@ class QTensor:
         return self.int_data.dtype
 
 
-def test_expand_param_qtensor():
+def test_qtensor_param_expands_to_blocks_and_scales():
     """QTensor params are expanded to blocks+scales with correct naming."""
     from tinyserve.expert_store import _expand_param, _is_qtensor
 
@@ -45,7 +45,7 @@ def test_expand_param_qtensor():
     torch.testing.assert_close(result["gate_up_proj_scales"], scale.cpu())
 
 
-def test_expand_param_qtensor_sliced():
+def test_qtensor_expansion_slices_correct_expert_row():
     """Expert-index slicing on QTensor expansion picks the right expert row."""
     from tinyserve.expert_store import _expand_param
 
@@ -59,7 +59,7 @@ def test_expand_param_qtensor_sliced():
 
 
 @requires_cuda
-def test_store_and_retrieve_expert_weights():
+def test_cached_weights_match_cpu_source():
     """Store BF16 expert weights on CPU, retrieve to GPU, values match."""
     from tinyserve.expert_store import ExpertStore
 
@@ -89,7 +89,7 @@ def test_store_and_retrieve_expert_weights():
 
 
 @requires_cuda
-def test_buffer_reuse_across_experts():
+def test_same_buffer_reused_for_different_experts_without_corruption():
     """Same buffer can be reused for different experts without corruption."""
     from tinyserve.expert_store import ExpertStore
 
@@ -110,7 +110,7 @@ def test_buffer_reuse_across_experts():
 
 
 @requires_cuda
-def test_expert_bytes_computed_from_weights():
+def test_expert_byte_size_derived_from_actual_weight_shapes():
     """Expert byte size is derived from actual weight shapes, not hardcoded."""
     from tinyserve.expert_store import ExpertStore
 
@@ -131,7 +131,7 @@ def test_expert_bytes_computed_from_weights():
 
 
 @requires_cuda
-def test_lru_cache_with_generic_store():
+def test_cache_allocate_and_lookup_returns_correct_slot():
     """LRU cache works with generic store's buffer format."""
     from tinyserve.expert_store import ExpertStore, ExpertCache
 
@@ -159,7 +159,7 @@ def test_lru_cache_with_generic_store():
 
 
 @requires_cuda
-def test_async_copy_with_stream():
+def test_nonblocking_copy_on_cuda_stream_produces_correct_results():
     """Non-blocking copy on a CUDA stream produces correct results."""
     from tinyserve.expert_store import ExpertStore
 
@@ -184,7 +184,7 @@ def test_async_copy_with_stream():
 
 
 @requires_cuda
-def test_fp8_double_buffer_no_race():
+def test_fp8_double_buffer_interleave_has_no_race_condition():
     """FP8 copy_to_buffer uses per-buffer staging — no race between buf_a and buf_b."""
     from tinyserve.expert_store import ExpertStore
 
@@ -216,7 +216,7 @@ def test_fp8_double_buffer_no_race():
 
 
 @requires_cuda
-def test_fp8_roundtrip_accuracy():
+def test_fp8_compression_preserves_values_within_quantization_error():
     """FP8 compression→decompression preserves values within FP8 quantization error."""
     from tinyserve.expert_store import ExpertStore
 

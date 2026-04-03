@@ -1,0 +1,23 @@
+=== Dynamic VRAM Rebalancing Test ===
+
+Loading model with max_seq_len=512 (small, to trigger rebalancing)...
+Initial state:
+  Expert cache: 236 slots
+  KV cache: 512 tokens
+  VRAMBudget: active
+  VRAM free: 973 MB
+  Expert bytes: 13236480
+  KV bytes/token: 49152
+  Tokens per expert slot: 269
+  KV pressure threshold: 0.85
+
+After warmup: KV used=3/512 (1%)
+
+======================================================================
+Phase 1: Progressive context growth — watch expert cache shrink
+ step  kv_used  kv_max  kv_util  exp_cap  exp_hr          action
+-----------------------------------------------------------------
+    1       50     512     10%      236  32.1%            none
+    2      150     512     29%      236  31.5%            none
+    3      250     512     49%      236  31.2%            none
+    4      350     512     68%      236  30.6%            none
