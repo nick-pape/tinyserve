@@ -505,38 +505,30 @@ class ExpertPipeline:
             cache.flush_slot_updates()
         return output
 
-    def _execute_token_experts(
+    def _classify_hits_misses(
         self,
-        h: torch.Tensor,
-        output: torch.Tensor,
-        tok_idx: int,
+        cache: "ExpertCache",
         layer_idx: int,
         expert_ids: torch.Tensor | list[int],
-        weights: torch.Tensor,
-    ):
-        if self.cache is None:
-            if isinstance(expert_ids, torch.Tensor):
-                expert_ids = expert_ids.tolist()
-            self._pipeline_experts(h, output, tok_idx, layer_idx, expert_ids, weights, list(range(len(expert_ids))))
-            _evt = torch.cuda.Event()
-            _evt.record(self.compute_stream)
-            torch.cuda.current_stream().wait_event(_evt)
-            return
+    ) -> tuple[list[tuple[int, int]], list[int], list[int]]:
+        """Classify expert_ids into cache hits and misses.
 
-        cache = self.cache
+        Returns:
+            (hits, misses, expert_ids_list)
+            hits: list of (position_idx, cache_slot)
+            misses: list of position indices that missed
+            expert_ids_list: expert IDs as a Python list
+        """
         _prof = self.profiler
-        _inline = self._inline_fwd
 
-        # GPU slot map lookup — no CUDA sync.
         if isinstance(expert_ids, torch.Tensor) and hasattr(cache, "lookup_slots"):
             with _prof.phase("cache_lookup") if _prof else nullcontext():
                 slots = cache.lookup_slots(layer_idx, expert_ids)
-                # ONE .tolist() for both slots and expert_ids — single CUDA sync.
                 slots_list = slots.tolist()
 
-            hits = []
-            misses = []
-            expert_ids_list = expert_ids.tolist()  # piggybacks on same sync
+            hits: list[tuple[int, int]] = []
+            misses: list[int] = []
+            expert_ids_list: list[int] = expert_ids.tolist()
             if _cython_classify_hits is not None:
                 hits, misses = _cython_classify_hits(expert_ids_list, slots_list)
                 for i, slot in hits:
@@ -552,7 +544,6 @@ class ExpertPipeline:
                 for i, (eid, slot) in enumerate(zip(expert_ids_list, slots_list)):
                     if slot >= 0:
                         hits.append((i, slot))
-                        # Update policy recency (Python-only, no GPU sync).
                         cache._policy.lookup((layer_idx, eid))
                         cache.hits += 1
                         cache._layer_hits[layer_idx] = cache._layer_hits.get(layer_idx, 0) + 1
@@ -563,7 +554,6 @@ class ExpertPipeline:
                         cache._layer_misses[layer_idx] = cache._layer_misses.get(layer_idx, 0) + 1
                         cache._expert_access_count[(layer_idx, eid)] = cache._expert_access_count.get((layer_idx, eid), 0) + 1
         else:
-            # Fallback: original Python path for list inputs or old-style cache.
             if isinstance(expert_ids, torch.Tensor):
                 expert_ids = expert_ids.tolist()
             expert_ids_list = expert_ids
@@ -577,11 +567,24 @@ class ExpertPipeline:
                     else:
                         misses.append(i)
 
-        # C++ fast path: all hits, no pending prefetch events, extension loaded.
+        return hits, misses, expert_ids_list
+
+    def _forward_cache_hits(
+        self,
+        hits: list[tuple[int, int]],
+        h: torch.Tensor,
+        output: torch.Tensor,
+        tok_idx: int,
+        weights: torch.Tensor,
+        cache: "ExpertCache",
+    ) -> bool:
+        """Process all cache hits. Returns True if C++ fast path was used."""
+        _prof = self.profiler
+        _inline = self._inline_fwd
         _cpp = self._cpp_ext
+
         if (
             _cpp is not None
-            and not misses
             and hits
             and not any(s in self._prefetch_events for _, s in hits)
         ):
@@ -619,9 +622,7 @@ class ExpertPipeline:
                 _args["activation"],
             )
             output[tok_idx] += out.squeeze(0)
-            if cache is not None and hasattr(cache, "flush_slot_updates"):
-                cache.flush_slot_updates()
-            return
+            return True
 
         for i, slot in hits:
             with _prof.phase("hit_compute") if _prof else nullcontext():
@@ -634,54 +635,65 @@ class ExpertPipeline:
                 if out is None:
                     out = forward_from_packed(self.template, packed, self._param_refs, h)
                 output[tok_idx] += weights[i] * out.squeeze(0)
+        return False
 
-        if not misses:
-            if cache is not None and hasattr(cache, "flush_slot_updates"):
-                cache.flush_slot_updates()
-            return
+    def _handle_miss_fallback(
+        self,
+        misses: list[int],
+        h: torch.Tensor,
+        output: torch.Tensor,
+        tok_idx: int,
+        layer_idx: int,
+        expert_ids_list: list[int],
+        weights: torch.Tensor,
+        cache: "ExpertCache",
+    ):
+        """Fiddler CPU fallback: buddy substitution then CPU compute for each miss."""
+        _prof = self.profiler
+        _inline = self._inline_fwd
 
-        # Fiddler (arxiv 2402.07033): at batch=1, route ALL misses through CPU compute.
-        # Sending activations (~KB) to CPU is faster than H2D weight transfer (~MB).
-        # cpu_on_miss=True enables this path; False preserves original GPU pipeline.
-        if self.cpu_on_miss and self.cpu_expert is not None and h.shape[0] == 1:
-            for i in misses:
-                eid = expert_ids_list[i]
+        for i in misses:
+            eid = expert_ids_list[i]
 
-                # BuddyMoE: try cached substitute first (zero stall).
-                buddy_tbl = (self._buddy_tables or {}).get(layer_idx)
-                if buddy_tbl is not None and cache is not None:
-                    if cache._slot_map_cpu is not None and layer_idx < cache._slot_map_cpu.shape[0]:
-                        cached_experts = set(int(e) for e in range(cache._slot_map_cpu.shape[1])
-                                            if cache._slot_map_cpu[layer_idx, e] >= 0)
-                    else:
-                        cached_experts = set()
-                    buddy_eid = buddy_tbl.find_cached_buddy(eid, cached_experts)
-                    if buddy_eid is not None:
-                        buddy_slot = cache.lookup(layer_idx, buddy_eid)
-                        if buddy_slot is not None:
-                            packed = cache.get_packed(buddy_slot)
-                            out = None
-                            if _inline is not None:
-                                out = _inline(packed, h)
-                            if out is None:
-                                out = forward_from_packed(self.template, packed, self._param_refs, h)
-                            output[tok_idx] += weights[i] * out.squeeze(0)
-                            continue
+            buddy_tbl = (self._buddy_tables or {}).get(layer_idx)
+            if buddy_tbl is not None:
+                if cache._slot_map_cpu is not None and layer_idx < cache._slot_map_cpu.shape[0]:
+                    cached_experts = set(int(e) for e in range(cache._slot_map_cpu.shape[1])
+                                        if cache._slot_map_cpu[layer_idx, e] >= 0)
+                else:
+                    cached_experts = set()
+                buddy_eid = buddy_tbl.find_cached_buddy(eid, cached_experts)
+                if buddy_eid is not None:
+                    buddy_slot = cache.lookup(layer_idx, buddy_eid)
+                    if buddy_slot is not None:
+                        packed = cache.get_packed(buddy_slot)
+                        out = None
+                        if _inline is not None:
+                            out = _inline(packed, h)
+                        if out is None:
+                            out = forward_from_packed(self.template, packed, self._param_refs, h)
+                        output[tok_idx] += weights[i] * out.squeeze(0)
+                        continue
 
-                # No buddy available — fall back to CPU compute.
-                expert_packed = self.store.get_expert_data(layer_idx, eid)
-                with _prof.phase("cpu_compute") if _prof else nullcontext():
-                    out = self.cpu_expert.forward(h, expert_packed)
-                output[tok_idx] += weights[i] * out.squeeze(0)
-                if cache is not None:
-                    gpu_slot = cache.allocate(layer_idx, eid)
-                    cache.get_packed(gpu_slot).copy_(expert_packed[:cache.expert_bytes], non_blocking=True)
-            if cache is not None and hasattr(cache, "flush_slot_updates"):
-                cache.flush_slot_updates()
-            return
+            expert_packed = self.store.get_expert_data(layer_idx, eid)
+            with _prof.phase("cpu_compute") if _prof else nullcontext():
+                out = self.cpu_expert.forward(h, expert_packed)
+            output[tok_idx] += weights[i] * out.squeeze(0)
+            gpu_slot = cache.allocate(layer_idx, eid)
+            cache.get_packed(gpu_slot).copy_(expert_packed[:cache.expert_bytes], non_blocking=True)
 
-        # Split misses: RAM-cached experts go to GPU pipeline (fast H2D from pinned),
-        # truly cold experts (not in RAM) use CPU compute to avoid mmap page fault stall.
+    def _handle_miss_gpu_pipeline(
+        self,
+        misses: list[int],
+        h: torch.Tensor,
+        output: torch.Tensor,
+        tok_idx: int,
+        layer_idx: int,
+        expert_ids_list: list[int],
+        weights: torch.Tensor,
+        cache: "ExpertCache",
+    ):
+        """Double-buffered H2D pipeline for misses, with optional RAM-split routing."""
         if self.cpu_expert is not None and self.ram_cache is not None and h.shape[0] == 1:
             ram = self.ram_cache
             cold_misses = []
@@ -690,22 +702,16 @@ class ExpertPipeline:
                 ram.wait_pending(layer_idx, eid)
                 slot = ram.lookup(layer_idx, eid)
                 if slot is not None:
-                    # Expert is in pinned RAM — GPU pipeline is faster (async H2D + overlap)
-                    cold_misses.append(i)  # let _pipeline_experts handle it via store._data
+                    cold_misses.append(i)
                 else:
-                    # Truly cold: not in RAM. Load via pread (or mmap fallback)
-                    # then CPU compute from cached pinned data.
                     ram_slot = ram.load_sync(layer_idx, eid, self.store._data[layer_idx, eid])
                     expert_data = ram.get_slot_data(ram_slot)
                     out = self.cpu_expert.forward(h, expert_data)
                     output[tok_idx] += weights[i] * out.squeeze(0)
-                    # Populate GPU cache too
                     if cache is not None:
                         gpu_slot = cache.allocate(layer_idx, eid)
                         cache.get_packed(gpu_slot).copy_(ram.get_slot_data(ram.lookup(layer_idx, eid)), non_blocking=True)
             if not cold_misses:
-                if cache is not None and hasattr(cache, "flush_slot_updates"):
-                    cache.flush_slot_updates()
                 return
             misses = cold_misses
 
@@ -713,7 +719,42 @@ class ExpertPipeline:
         _evt = torch.cuda.Event()
         _evt.record(self.compute_stream)
         torch.cuda.current_stream().wait_event(_evt)
-        if cache is not None and hasattr(cache, "flush_slot_updates"):
+
+    def _execute_token_experts(
+        self,
+        h: torch.Tensor,
+        output: torch.Tensor,
+        tok_idx: int,
+        layer_idx: int,
+        expert_ids: torch.Tensor | list[int],
+        weights: torch.Tensor,
+    ):
+        if self.cache is None:
+            if isinstance(expert_ids, torch.Tensor):
+                expert_ids = expert_ids.tolist()
+            self._pipeline_experts(h, output, tok_idx, layer_idx, expert_ids, weights, list(range(len(expert_ids))))
+            _evt = torch.cuda.Event()
+            _evt.record(self.compute_stream)
+            torch.cuda.current_stream().wait_event(_evt)
+            return
+
+        cache = self.cache
+        hits, misses, expert_ids_list = self._classify_hits_misses(cache, layer_idx, expert_ids)
+
+        cpp_used = self._forward_cache_hits(hits, h, output, tok_idx, weights, cache)
+        if cpp_used or not misses:
+            if hasattr(cache, "flush_slot_updates"):
+                cache.flush_slot_updates()
+            return
+
+        if self.cpu_on_miss and self.cpu_expert is not None and h.shape[0] == 1:
+            self._handle_miss_fallback(misses, h, output, tok_idx, layer_idx, expert_ids_list, weights, cache)
+            if hasattr(cache, "flush_slot_updates"):
+                cache.flush_slot_updates()
+            return
+
+        self._handle_miss_gpu_pipeline(misses, h, output, tok_idx, layer_idx, expert_ids_list, weights, cache)
+        if hasattr(cache, "flush_slot_updates"):
             cache.flush_slot_updates()
 
     def _pipeline_experts(
