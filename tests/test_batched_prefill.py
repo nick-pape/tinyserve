@@ -48,7 +48,7 @@ def _make_pipeline(num_experts=4, hidden=16, intermediate=32, device="cuda"):
 
 
 @requires_cuda
-def test_batched_matches_sequential_single_expert():
+def test_batched_dispatch_matches_sequential_for_single_expert():
     """4 tokens all routed to expert 0 — batched == sequential."""
     pipeline = _make_pipeline()
     seq_len, top_k = 4, 1
@@ -62,7 +62,7 @@ def test_batched_matches_sequential_single_expert():
 
 
 @requires_cuda
-def test_batched_matches_sequential_multi_expert():
+def test_batched_dispatch_matches_sequential_for_multiple_experts():
     """8 tokens with top_k=2, mixed experts — batched == sequential."""
     pipeline = _make_pipeline()
     seq_len, top_k = 8, 2
@@ -77,7 +77,7 @@ def test_batched_matches_sequential_multi_expert():
 
 
 @requires_cuda
-def test_batched_loads_each_expert_once():
+def test_batched_dispatch_loads_each_expert_once_per_step():
     """With 4 tokens all needing expert 2, cache should see 1 miss not 4."""
     pipeline = _make_pipeline()
     seq_len = 4
@@ -91,7 +91,7 @@ def test_batched_loads_each_expert_once():
 
 
 @requires_cuda
-def test_batched_empty_input():
+def test_batched_dispatch_returns_empty_output_for_zero_length_input():
     """Zero-length input returns zero-length output."""
     pipeline = _make_pipeline()
     h = torch.randn(0, 16, device="cuda", dtype=torch.bfloat16)
@@ -102,7 +102,7 @@ def test_batched_empty_input():
 
 
 @requires_cuda
-def test_batched_large_prefill():
+def test_batched_dispatch_handles_large_prefill_correctly():
     """512 tokens — stress test for batched path."""
     pipeline = _make_pipeline()
     seq_len, top_k = 512, 2

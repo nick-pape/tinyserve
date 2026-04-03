@@ -54,7 +54,7 @@ def _make_pipeline_with_cpu(num_experts=4, hidden=16, intermediate=32):
 
 
 @requires_cuda
-def test_cpu_miss_produces_correct_output():
+def test_cache_miss_computes_on_cpu_and_returns_nonzero_output():
     """CPU compute on miss should produce same output as GPU compute."""
     pipeline, store = _make_pipeline_with_cpu()
     h = torch.randn(1, 16, device="cuda", dtype=torch.bfloat16)
@@ -76,7 +76,7 @@ def test_cpu_miss_produces_correct_output():
 
 
 @requires_cuda
-def test_cpu_miss_flag_controls_behavior():
+def test_gpu_pipeline_handles_miss_when_cpu_fallback_disabled():
     """When cpu_on_miss=False, misses use GPU pipeline instead."""
     pipeline, store = _make_pipeline_with_cpu()
     pipeline.cpu_on_miss = False

@@ -12,7 +12,7 @@ def _make_cache(capacity=4, num_layers=3, num_experts=8, device="cpu"):
     return cache
 
 
-def test_per_layer_hits_misses():
+def test_cache_tracks_per_layer_hit_miss_counts():
     cache = _make_cache()
     # Miss on layer 0, expert 0
     assert cache.lookup(0, 0) is None
@@ -29,7 +29,7 @@ def test_per_layer_hits_misses():
     assert stats[1]["misses"] == 1
 
 
-def test_per_layer_miss_latency():
+def test_cache_records_miss_latency_per_layer():
     cache = _make_cache()
     # Simulate a miss — lookup returns None, record latency
     cache.lookup(0, 0)
@@ -39,7 +39,7 @@ def test_per_layer_miss_latency():
     assert stats[0]["miss_latency_ms"] == [5.0]
 
 
-def test_reset_layer_stats():
+def test_stats_reset_zeros_all_per_layer_counters():
     cache = _make_cache()
     cache.lookup(0, 0)
     cache.reset_stats()
@@ -48,7 +48,7 @@ def test_reset_layer_stats():
     assert stats[0]["misses"] == 0
 
 
-def test_expert_frequency_tracking():
+def test_expert_frequency_counts_both_hits_and_misses():
     cache = _make_cache()
     # Access expert 3 on layer 0 three times
     for _ in range(3):
@@ -59,7 +59,7 @@ def test_expert_frequency_tracking():
     assert freq[(0, 3)] == 3  # 1 miss + 2 hits = 3 accesses
 
 
-def test_unique_experts_per_step():
+def test_step_stats_deduplicate_experts_within_same_step():
     cache = _make_cache()
     cache.begin_step()
     cache.lookup(0, 1)
@@ -70,7 +70,7 @@ def test_unique_experts_per_step():
     assert step_stats["total_lookups"] == 3
 
 
-def test_deferred_slot_updates():
+def test_slot_map_reflects_all_allocations_after_flush():
     cache = _make_cache(capacity=4, num_layers=2, num_experts=8)
     # Allocate several experts
     for eid in range(4):

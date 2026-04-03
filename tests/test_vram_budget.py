@@ -11,7 +11,7 @@ def _make_cache(capacity=10, num_layers=2, num_experts=8, device="cpu"):
     return cache
 
 
-def test_shrink_evicts_and_reduces_capacity():
+def test_cache_shrink_evicts_experts_and_reduces_capacity():
     cache = _make_cache(capacity=10)
     # Fill 8 slots
     for i in range(8):
@@ -25,7 +25,7 @@ def test_shrink_evicts_and_reduces_capacity():
     assert len(cache._policy) <= 6
 
 
-def test_grow_increases_capacity():
+def test_cache_grow_adds_free_slots_and_increases_capacity():
     cache = _make_cache(capacity=6)
     for i in range(6):
         cache.allocate(0, i)
@@ -36,7 +36,7 @@ def test_grow_increases_capacity():
     assert len(cache._free_slots) == 4  # 4 new free slots
 
 
-def test_shrink_below_used_evicts_lru():
+def test_cache_shrink_below_used_capacity_evicts_lru_experts():
     cache = _make_cache(capacity=8)
     for i in range(8):
         cache.allocate(0, i)
@@ -47,13 +47,13 @@ def test_shrink_below_used_evicts_lru():
     assert len(cache._policy) == 2  # only 2 experts remain
 
 
-def test_shrink_returns_freed_bytes():
+def test_cache_shrink_returns_correct_freed_byte_count():
     cache = _make_cache(capacity=10)
     freed = cache.shrink(3)
     assert freed == 3 * 64
 
 
-def test_grow_after_shrink():
+def test_cache_capacity_recovers_after_shrink_then_grow():
     cache = _make_cache(capacity=10)
     cache.shrink(5)
     assert cache.capacity == 5
@@ -61,7 +61,7 @@ def test_grow_after_shrink():
     assert cache.capacity == 8
 
 
-def test_kv_cache_extend():
+def test_kv_cache_extend_increases_max_seq_len():
     from tinyserve.static_kv_cache import StaticKVCache
     cache = StaticKVCache(
         max_seq_len=100, num_layers=2, num_kv_heads=4,
@@ -74,7 +74,7 @@ def test_kv_cache_extend():
     assert cache._k.shape[3] == 150
 
 
-def test_kv_cache_extend_preserves_data():
+def test_kv_cache_extend_preserves_existing_key_value_data():
     from tinyserve.static_kv_cache import StaticKVCache
     cache = StaticKVCache(
         max_seq_len=100, num_layers=2, num_kv_heads=4,
@@ -92,7 +92,7 @@ def test_kv_cache_extend_preserves_data():
     torch.testing.assert_close(cache._k[0, 0, :, :10, :], old_k)
 
 
-def test_kv_cache_vram_bytes():
+def test_kv_cache_reports_correct_vram_byte_usage():
     from tinyserve.static_kv_cache import StaticKVCache
     cache = StaticKVCache(
         max_seq_len=100, num_layers=2, num_kv_heads=4,
@@ -102,7 +102,7 @@ def test_kv_cache_vram_bytes():
     assert cache.vram_bytes == expected
 
 
-def test_vram_budget_rebalance_on_kv_pressure():
+def test_vram_budget_shrinks_experts_when_kv_pressure_is_high():
     from tinyserve.vram_budget import VRAMBudget
 
     cache = _make_cache(capacity=10)
@@ -127,7 +127,7 @@ def test_vram_budget_rebalance_on_kv_pressure():
     assert action["expert_slots_to_free"] > 0
 
 
-def test_vram_budget_no_action_when_balanced():
+def test_vram_budget_takes_no_action_when_usage_is_balanced():
     from tinyserve.vram_budget import VRAMBudget
 
     cache = _make_cache(capacity=10)
@@ -149,7 +149,7 @@ def test_vram_budget_no_action_when_balanced():
     assert action["should_rebalance"] is False
 
 
-def test_vram_budget_grow_experts_after_request():
+def test_vram_budget_grows_experts_when_kv_pressure_clears():
     from tinyserve.vram_budget import VRAMBudget
 
     cache = _make_cache(capacity=6)  # was shrunk from 10

@@ -3,7 +3,7 @@ import torch
 import pytest
 
 
-def test_coactivation_matrix_from_routing():
+def test_routing_decisions_produce_coactivation_matrix():
     from tinyserve.buddy_experts import build_coactivation_matrix
 
     # 10 tokens, 4 experts, top_k=2
@@ -17,7 +17,7 @@ def test_coactivation_matrix_from_routing():
     assert coact[0, 1] > coact[0, 3]
 
 
-def test_buddy_lookup():
+def test_buddy_table_returns_highest_coactivated_expert_first():
     from tinyserve.buddy_experts import BuddyTable
 
     # 4 experts, buddy of expert 0 is expert 1 (highest co-activation)
@@ -33,7 +33,7 @@ def test_buddy_lookup():
     assert buddies[0] == 1  # highest co-activation with expert 0
 
 
-def test_buddy_substitution_uses_cached_expert():
+def test_buddy_prefetch_selects_cached_coactivated_expert():
     from tinyserve.buddy_experts import BuddyTable
 
     coact = torch.tensor([
