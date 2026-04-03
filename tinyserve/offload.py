@@ -230,10 +230,11 @@ def _register_sdpa_attention() -> str:
                     query, k_decode, v_decode, attn_mask=None, dropout_p=0.0,
                     is_causal=False, scale=scaling, enable_gqa=True,
                 )
-            elif L > 1024:
-                # Long prefill: head-wise attention to avoid VRAM OOM.
-                # Process one GQA group at a time — peak VRAM is O(L × head_dim)
-                # instead of O(L × num_heads × head_dim).
+            elif S > 2048 or (L > 256 and S > 1024):
+                # Long KV context: head-wise attention to avoid VRAM OOM.
+                # Triggers when KV length exceeds 2048, or when both chunk and
+                # KV are moderate. Processes one GQA group at a time — peak VRAM
+                # is O(chunk × head_dim) instead of O(chunk × num_heads × head_dim).
                 from .head_attention import head_wise_sdpa
                 return head_wise_sdpa(
                     query, key, value, scaling,
