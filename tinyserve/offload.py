@@ -59,6 +59,51 @@ class TinyserveConfig:
     attn_implementation: str | AttentionBackend | None = None
 
 
+class OffloadedLM:
+    """Typed wrapper for an offloaded MoE model.
+
+    Replaces monkey-patched attributes (_kv_cache, _vram_budget, _offload_pipelines)
+    with typed fields. Forwards all other attribute access to the underlying model.
+    """
+
+    def __init__(self, model, pipelines, kv_cache=None, vram_budget=None, offload_config=None):
+        self._model = model
+        self.pipelines = pipelines
+        self.kv_cache = kv_cache
+        self.vram_budget = vram_budget
+        self.offload_config = offload_config
+
+    # Backward-compat aliases for code that reads the monkey-patched attributes.
+    @property
+    def _offload_pipelines(self):
+        return self.pipelines
+
+    @property
+    def _kv_cache(self):
+        return self.kv_cache
+
+    @property
+    def _vram_budget(self):
+        return self.vram_budget
+
+    def generate(self, *args, **kwargs):
+        if self.kv_cache is not None:
+            kwargs.setdefault("past_key_values", self.kv_cache)
+        return self._model.generate(*args, **kwargs)
+
+    def __call__(self, *args, **kwargs):
+        return self._model(*args, **kwargs)
+
+    def __getattr__(self, name: str):
+        if name.startswith("_") or name in ("pipelines", "kv_cache", "vram_budget", "offload_config"):
+            raise AttributeError(name)
+        return getattr(self._model, name)
+
+    def to(self, *args, **kwargs):
+        self._model = self._model.to(*args, **kwargs)
+        return self
+
+
 def _register_flex_attention() -> str:
     """Register FlexAttention with sink support for GPT-OSS models.
 
@@ -387,13 +432,13 @@ def offload_model(
 
     if hasattr(model, "model"):
         model.model = offloaded.model
-    model._offload_pipelines = offloaded.pipelines
     model = model.to(device).to(torch.bfloat16)
 
     # Allocate KV cache first (if requested), then give remainder to expert cache.
     from .expert_cache import ExpertCache
     from .static_kv_cache import StaticKVCache
 
+    model_config = model.config
     buf_bytes = store.buffer_expert_bytes
     total_vram = torch.cuda.get_device_properties(device).total_memory
     used_vram = total_vram - torch.cuda.mem_get_info(device)[0]
@@ -407,11 +452,10 @@ def offload_model(
     use_flex = attn_implementation == AttentionBackend.FLEX
     if max_seq_len > 0:
         storage_device = "cpu" if kv_offload else None
-        kv_cache = StaticKVCache.from_model_config(config, max_seq_len=max_seq_len, device=device, dtype=kv_dtype, storage_device=storage_device)
+        kv_cache = StaticKVCache.from_model_config(model_config, max_seq_len=max_seq_len, device=device, dtype=kv_dtype, storage_device=storage_device)
         if use_flex:
             kv_cache.static_shapes = True
         kv_vram = kv_cache.vram_bytes
-        model._kv_cache = kv_cache
 
     if buf_bytes > 0:
         available = max(0, free_vram - reserved - kv_vram)
@@ -448,17 +492,15 @@ def offload_model(
         p.cache_bias = cache_bias
 
     from .vram_budget import VRAMBudget
+    vram_budget = None
     if cache is not None and kv_cache is not None:
         kv_bpt = kv_cache.vram_bytes // max(1, kv_cache.max_seq_len)
-        budget = VRAMBudget(
+        vram_budget = VRAMBudget(
             expert_cache=cache, kv_cache=kv_cache,
             expert_bytes=buf_bytes, kv_bytes_per_token=kv_bpt,
             max_expert_capacity=cache_capacity,
         )
-        model._vram_budget = budget
-        kv_cache._vram_budget = budget  # enables self-healing on overflow
-    else:
-        model._vram_budget = None
+        kv_cache._vram_budget = vram_budget  # enables self-healing on overflow
 
     # Seed cache from imatrix activation data (eliminates cold-start phase).
     if imatrix_path is not None and cache is not None:
@@ -484,8 +526,6 @@ def offload_model(
             except json.JSONDecodeError as e:
                 raise ValueError(f"Invalid buddy table JSON: {e}") from e
         for p in offloaded.pipelines:
-            # buddy_data is keyed by layer index string
-            # All pipelines share the same buddy tables (one per layer)
             p._buddy_tables = {}
             for layer_str, expert_buddies in buddy_data.items():
                 buddies = {int(eid): bl for eid, bl in expert_buddies.items()}
@@ -505,7 +545,13 @@ def offload_model(
             ram_cache.num_slots,
         )
 
-    return model
+    return OffloadedLM(
+        model=model,
+        pipelines=offloaded.pipelines,
+        kv_cache=kv_cache,
+        vram_budget=vram_budget,
+        offload_config=offload_config,
+    )
 
 
 def load_and_offload(
