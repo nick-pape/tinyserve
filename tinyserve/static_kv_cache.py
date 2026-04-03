@@ -166,13 +166,14 @@ class StaticKVCache:
     def get_max_cache_shape(self):
         return None
 
-    def get_mask_sizes(self, cache_position=None, layer_idx=0):
+    def get_mask_sizes(self, q_length=None, layer_idx=0):
         cur = self._seq_lens[layer_idx]
-        if cur == 0 and cache_position is not None:
-            return cache_position.shape[0], 0
-        if cache_position is not None:
-            return cur + cache_position.shape[0], 0
-        return cur, 0
+        if q_length is None:
+            return cur, 0
+        if isinstance(q_length, int):
+            return cur + q_length, 0
+        # Tensor (older HF versions)
+        return cur + q_length.shape[0], 0
 
     def is_initialized(self, layer_idx=0):
         return self._seq_lens[layer_idx] > 0
