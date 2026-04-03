@@ -115,15 +115,15 @@ class TestPipelineCPUExpert:
                 return F.linear(gated, self.down_proj)
 
         template = FusedTemplate().to(device).to(torch.float32)
-        buf_a = store.allocate_buffer(device)
-        buf_b = store.allocate_buffer(device)
+        staging_buffer_a = store.allocate_buffer(device)
+        staging_buffer_b = store.allocate_buffer(device)
         transfer_stream = torch.cuda.Stream(device)
         compute_stream = torch.cuda.Stream(device)
 
         # Pipeline WITHOUT cpu_expert (GPU-only).
         gpu_pipeline = ExpertPipeline(
             store, template, device,
-            buf_a=buf_a, buf_b=buf_b,
+            staging_buffer_a=staging_buffer_a, staging_buffer_b=staging_buffer_b,
             transfer_stream=transfer_stream,
             compute_stream=compute_stream,
         )
@@ -139,7 +139,7 @@ class TestPipelineCPUExpert:
         cpu_fwd = CPUExpertForward(layout, act_fn=F.silu, num_threads=1)
         cpu_pipeline = ExpertPipeline(
             store, template, device,
-            buf_a=buf_a, buf_b=buf_b,
+            staging_buffer_a=staging_buffer_a, staging_buffer_b=staging_buffer_b,
             transfer_stream=transfer_stream,
             compute_stream=compute_stream,
             ram_cache=ram,

@@ -36,14 +36,14 @@ def _make_pipeline(num_experts=4, hidden=16, intermediate=32, device="cuda"):
             }
     store = ExpertStore.from_dict(weights, 1, num_experts)
     template = TinyFusedExpert(hidden, intermediate).to(device).to(torch.bfloat16)
-    buf_a = store.allocate_buffer(torch.device(device))
-    buf_b = store.allocate_buffer(torch.device(device))
+    staging_buffer_a = store.allocate_buffer(torch.device(device))
+    staging_buffer_b = store.allocate_buffer(torch.device(device))
     ts = torch.cuda.Stream(torch.device(device))
     cs = torch.cuda.Stream(torch.device(device))
     cache = ExpertCache(num_experts, store.buffer_expert_bytes, torch.device(device),
                            num_layers=1, num_experts=num_experts)
     pipeline = ExpertPipeline(store, template, torch.device(device),
-                                     buf_a, buf_b, ts, cs, cache=cache)
+                                     staging_buffer_a, staging_buffer_b, ts, cs, cache=cache)
     return pipeline
 
 

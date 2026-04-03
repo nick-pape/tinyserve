@@ -345,8 +345,8 @@ class ExpertPipeline:
         store: ExpertStore,
         template: nn.Module,
         device: torch.device,
-        buf_a: ExpertBuffer,
-        buf_b: ExpertBuffer,
+        staging_buffer_a: ExpertBuffer,
+        staging_buffer_b: ExpertBuffer,
         transfer_stream: torch.cuda.Stream,
         compute_stream: torch.cuda.Stream,
         cache: ExpertCache | None = None,
@@ -358,8 +358,8 @@ class ExpertPipeline:
         self.template = template
         self.device = device
 
-        self.buf_a = buf_a
-        self.buf_b = buf_b
+        self.staging_buffer_a = staging_buffer_a
+        self.staging_buffer_b = staging_buffer_b
 
         self.transfer_stream = transfer_stream
         self.compute_stream = compute_stream
@@ -470,7 +470,7 @@ class ExpertPipeline:
                         )
 
             if out_batch is None:
-                buf = self.buf_a
+                buf = self.staging_buffer_a
                 self.store.copy_to_buffer(buf, layer_idx, eid, non_blocking=False)
                 torch.cuda.synchronize()
 
@@ -711,7 +711,7 @@ class ExpertPipeline:
         weights: torch.Tensor,
         indices: list[int],
     ):
-        bufs = [self.buf_a, self.buf_b]
+        bufs = [self.staging_buffer_a, self.staging_buffer_b]
         cache = self.cache
         buf_done: list[torch.cuda.Event | None] = [None, None]
         _prof = self.profiler

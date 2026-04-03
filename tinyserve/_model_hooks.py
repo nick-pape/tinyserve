@@ -206,8 +206,8 @@ class OffloadedModel(nn.Module):
             template = _make_template(first_container, device)
             store, _ = ExpertStore.build(moe_layers, moe_block_attr, expert_list_attr, fp8=fp8)
 
-        shared_buf_a = store.allocate_buffer(device)  # always BF16 layout
-        shared_buf_b = store.allocate_buffer(device)
+        shared_staging_a = store.allocate_buffer(device)  # always BF16 layout
+        shared_staging_b = store.allocate_buffer(device)
         transfer_stream = torch.cuda.Stream(device)
         compute_stream = torch.cuda.Stream(device)
         shared_stream = torch.cuda.Stream(device)
@@ -230,8 +230,8 @@ class OffloadedModel(nn.Module):
                 store,
                 template,
                 device,
-                buf_a=shared_buf_a,
-                buf_b=shared_buf_b,
+                staging_buffer_a=shared_staging_a,
+                staging_buffer_b=shared_staging_b,
                 transfer_stream=transfer_stream,
                 compute_stream=compute_stream,
                 cache=None,

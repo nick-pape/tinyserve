@@ -38,8 +38,8 @@ def _make_pipeline_with_cpu(num_experts=4, hidden=16, intermediate=32):
     store = ExpertStore.from_dict(weights, 1, num_experts)
     device = torch.device("cuda")
     template = TinyExpert(hidden, intermediate).to(device).to(torch.bfloat16)
-    buf_a = store.allocate_buffer(device)
-    buf_b = store.allocate_buffer(device)
+    staging_buffer_a = store.allocate_buffer(device)
+    staging_buffer_b = store.allocate_buffer(device)
     ts = torch.cuda.Stream(device)
     cs = torch.cuda.Stream(device)
     # Small cache: capacity=2 forces misses with 4 experts
@@ -47,7 +47,7 @@ def _make_pipeline_with_cpu(num_experts=4, hidden=16, intermediate=32):
                             num_layers=1, num_experts=num_experts)
     cpu_fwd = CPUExpertForward(store.layout, act_fn=nn.SiLU())
     pipeline = ExpertPipeline(store, template, device,
-                                     buf_a, buf_b, ts, cs, cache=cache)
+                                     staging_buffer_a, staging_buffer_b, ts, cs, cache=cache)
     pipeline.cpu_expert = cpu_fwd
     pipeline.cpu_on_miss = True
     return pipeline, store

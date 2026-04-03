@@ -72,13 +72,13 @@ def test_single_request_matches_unbatched():
     store, expert_weights = _build_store_and_pipeline(1, num_experts, hidden, intermediate)
     template = TinyFusedExpert(hidden, intermediate).to(device).to(torch.bfloat16)
 
-    buf_a = store.allocate_buffer(device)
-    buf_b = store.allocate_buffer(device)
+    staging_buffer_a = store.allocate_buffer(device)
+    staging_buffer_b = store.allocate_buffer(device)
     ts = torch.cuda.Stream(device)
     cs = torch.cuda.Stream(device)
     cache = ExpertCache(num_experts, store.buffer_expert_bytes, device, num_layers=1, num_experts=num_experts)
 
-    pipeline = ExpertPipeline(store, template, device, buf_a, buf_b, ts, cs, cache=cache)
+    pipeline = ExpertPipeline(store, template, device, staging_buffer_a, staging_buffer_b, ts, cs, cache=cache)
 
     h = torch.randn(1, hidden, device=device, dtype=torch.bfloat16)
     expert_ids = torch.tensor([1, 3], device=device)
@@ -118,13 +118,13 @@ def test_two_requests_same_expert_batched():
     store, expert_weights = _build_store_and_pipeline(1, num_experts, hidden, intermediate)
     template = TinyFusedExpert(hidden, intermediate).to(device).to(torch.bfloat16)
 
-    buf_a = store.allocate_buffer(device)
-    buf_b = store.allocate_buffer(device)
+    staging_buffer_a = store.allocate_buffer(device)
+    staging_buffer_b = store.allocate_buffer(device)
     ts = torch.cuda.Stream(device)
     cs = torch.cuda.Stream(device)
     cache = ExpertCache(num_experts, store.buffer_expert_bytes, device, num_layers=1, num_experts=num_experts)
 
-    pipeline = ExpertPipeline(store, template, device, buf_a, buf_b, ts, cs, cache=cache)
+    pipeline = ExpertPipeline(store, template, device, staging_buffer_a, staging_buffer_b, ts, cs, cache=cache)
 
     h1 = torch.randn(1, hidden, device=device, dtype=torch.bfloat16)
     h2 = torch.randn(1, hidden, device=device, dtype=torch.bfloat16)
@@ -161,13 +161,13 @@ def test_two_requests_different_experts():
     store, expert_weights = _build_store_and_pipeline(1, num_experts, hidden, intermediate)
     template = TinyFusedExpert(hidden, intermediate).to(device).to(torch.bfloat16)
 
-    buf_a = store.allocate_buffer(device)
-    buf_b = store.allocate_buffer(device)
+    staging_buffer_a = store.allocate_buffer(device)
+    staging_buffer_b = store.allocate_buffer(device)
     ts = torch.cuda.Stream(device)
     cs = torch.cuda.Stream(device)
     cache = ExpertCache(num_experts, store.buffer_expert_bytes, device, num_layers=1, num_experts=num_experts)
 
-    pipeline = ExpertPipeline(store, template, device, buf_a, buf_b, ts, cs, cache=cache)
+    pipeline = ExpertPipeline(store, template, device, staging_buffer_a, staging_buffer_b, ts, cs, cache=cache)
 
     h1 = torch.randn(1, hidden, device=device, dtype=torch.bfloat16)
     h2 = torch.randn(1, hidden, device=device, dtype=torch.bfloat16)
@@ -204,13 +204,13 @@ def test_scatter_correct_order():
     store, _ = _build_store_and_pipeline(1, num_experts, hidden, intermediate)
     template = TinyFusedExpert(hidden, intermediate).to(device).to(torch.bfloat16)
 
-    buf_a = store.allocate_buffer(device)
-    buf_b = store.allocate_buffer(device)
+    staging_buffer_a = store.allocate_buffer(device)
+    staging_buffer_b = store.allocate_buffer(device)
     ts = torch.cuda.Stream(device)
     cs = torch.cuda.Stream(device)
     cache = ExpertCache(num_experts, store.buffer_expert_bytes, device, num_layers=1, num_experts=num_experts)
 
-    pipeline = ExpertPipeline(store, template, device, buf_a, buf_b, ts, cs, cache=cache)
+    pipeline = ExpertPipeline(store, template, device, staging_buffer_a, staging_buffer_b, ts, cs, cache=cache)
 
     items = []
     refs = []
@@ -243,13 +243,13 @@ def test_cache_hit_batched():
     store, _ = _build_store_and_pipeline(1, num_experts, hidden, intermediate)
     template = TinyFusedExpert(hidden, intermediate).to(device).to(torch.bfloat16)
 
-    buf_a = store.allocate_buffer(device)
-    buf_b = store.allocate_buffer(device)
+    staging_buffer_a = store.allocate_buffer(device)
+    staging_buffer_b = store.allocate_buffer(device)
     ts = torch.cuda.Stream(device)
     cs = torch.cuda.Stream(device)
     cache = ExpertCache(num_experts, store.buffer_expert_bytes, device, num_layers=1, num_experts=num_experts)
 
-    pipeline = ExpertPipeline(store, template, device, buf_a, buf_b, ts, cs, cache=cache)
+    pipeline = ExpertPipeline(store, template, device, staging_buffer_a, staging_buffer_b, ts, cs, cache=cache)
 
     # Warm the cache by running one pass
     h_warm = torch.randn(1, hidden, device=device, dtype=torch.bfloat16)
@@ -294,12 +294,12 @@ def test_empty_requests():
     store, _ = _build_store_and_pipeline(1, num_experts, hidden, intermediate)
     template = TinyFusedExpert(hidden, intermediate).to(device).to(torch.bfloat16)
 
-    buf_a = store.allocate_buffer(device)
-    buf_b = store.allocate_buffer(device)
+    staging_buffer_a = store.allocate_buffer(device)
+    staging_buffer_b = store.allocate_buffer(device)
     ts = torch.cuda.Stream(device)
     cs = torch.cuda.Stream(device)
 
-    pipeline = ExpertPipeline(store, template, device, buf_a, buf_b, ts, cs)
+    pipeline = ExpertPipeline(store, template, device, staging_buffer_a, staging_buffer_b, ts, cs)
 
     batcher = ExpertBatcher(pipeline)
     outputs = batcher.batch_execute([], layer_idx=0)
@@ -320,13 +320,13 @@ def test_batch_size_one_no_regression():
     store, _ = _build_store_and_pipeline(1, num_experts, hidden, intermediate)
     template = TinyFusedExpert(hidden, intermediate).to(device).to(torch.bfloat16)
 
-    buf_a = store.allocate_buffer(device)
-    buf_b = store.allocate_buffer(device)
+    staging_buffer_a = store.allocate_buffer(device)
+    staging_buffer_b = store.allocate_buffer(device)
     ts = torch.cuda.Stream(device)
     cs = torch.cuda.Stream(device)
     cache = ExpertCache(num_experts, store.buffer_expert_bytes, device, num_layers=1, num_experts=num_experts)
 
-    pipeline = ExpertPipeline(store, template, device, buf_a, buf_b, ts, cs, cache=cache)
+    pipeline = ExpertPipeline(store, template, device, staging_buffer_a, staging_buffer_b, ts, cs, cache=cache)
 
     h = torch.randn(1, hidden, device=device, dtype=torch.bfloat16)
     eids = torch.tensor([2, 3], device=device)

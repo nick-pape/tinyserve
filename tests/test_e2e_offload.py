@@ -109,8 +109,8 @@ def test_offloaded_model_matches_reference():
     store = ExpertStore.from_dict(expert_weights, num_layers, num_experts)
     from tinyserve.expert_store import ExpertCache
 
-    shared_buf_a = store.allocate_buffer(device)
-    shared_buf_b = store.allocate_buffer(device)
+    shared_staging_a = store.allocate_buffer(device)
+    shared_staging_b = store.allocate_buffer(device)
     transfer_stream = torch.cuda.Stream(device)
     compute_stream = torch.cuda.Stream(device)
     shared_cache = ExpertCache(16, store.expert_bytes, device)
@@ -122,8 +122,8 @@ def test_offloaded_model_matches_reference():
             store,
             template,
             device,
-            buf_a=shared_buf_a,
-            buf_b=shared_buf_b,
+            staging_buffer_a=shared_staging_a,
+            staging_buffer_b=shared_staging_b,
             transfer_stream=transfer_stream,
             compute_stream=compute_stream,
             cache=shared_cache,
@@ -182,8 +182,8 @@ def test_offloaded_autoregressive_matches():
     store = ExpertStore.from_dict(expert_weights, num_layers, num_experts)
     from tinyserve.expert_store import ExpertCache
 
-    shared_buf_a = store.allocate_buffer(device)
-    shared_buf_b = store.allocate_buffer(device)
+    shared_staging_a = store.allocate_buffer(device)
+    shared_staging_b = store.allocate_buffer(device)
     transfer_stream = torch.cuda.Stream(device)
     compute_stream = torch.cuda.Stream(device)
     shared_cache = ExpertCache(16, store.expert_bytes, device)
@@ -195,8 +195,8 @@ def test_offloaded_autoregressive_matches():
             store,
             template,
             device,
-            buf_a=shared_buf_a,
-            buf_b=shared_buf_b,
+            staging_buffer_a=shared_staging_a,
+            staging_buffer_b=shared_staging_b,
             transfer_stream=transfer_stream,
             compute_stream=compute_stream,
             cache=shared_cache,

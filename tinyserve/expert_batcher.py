@@ -93,7 +93,7 @@ class ExpertBatcher:
     ) -> torch.Tensor:
         """Load expert from store to GPU buffer, forward the batch, optionally cache."""
         pipeline = self._pipeline
-        buf = pipeline.buf_a
+        buf = pipeline.staging_buffer_a
 
         pipeline.store.copy_to_buffer(buf, layer_idx, eid, non_blocking=False)
         torch.cuda.synchronize()
