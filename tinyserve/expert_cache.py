@@ -204,7 +204,7 @@ class ExpertCache:
         self._layer_miss_latencies.clear()
         self._expert_access_count.clear()
 
-    def clear(self):
+    def clear(self) -> None:
         """Evict all entries. Cache is empty after this call."""
         while len(self._policy) > 0:
             key, slot = self._policy.select_evict()

@@ -136,7 +136,7 @@ class StaticKVCache:
         self._v = new_v
         self.max_seq_len = new_max
 
-    def update(self, key_states, value_states, layer_idx, cache_kwargs=None):
+    def update(self, key_states, value_states, layer_idx, cache_kwargs=None) -> tuple[torch.Tensor, torch.Tensor]:
         new_tokens = key_states.shape[2]
         start = self._seq_lens[layer_idx]
         end = start + new_tokens
@@ -193,7 +193,7 @@ class StaticKVCache:
             v_out = v_out.to(device=self._compute_device, dtype=target_dtype, non_blocking=non_blocking)
         return k_out, v_out
 
-    def get_seq_length(self, layer_idx=0):
+    def get_seq_length(self, layer_idx=0) -> int:
         return self._seq_lens[layer_idx]
 
     def get_max_cache_shape(self):
@@ -246,7 +246,7 @@ class StaticKVCache:
     def prefetch(self, layer_idx):
         pass
 
-    def reset(self):
+    def reset(self) -> None:
         for i in range(self.num_layers):
             self._seq_lens[i] = 0
 

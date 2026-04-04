@@ -12,7 +12,7 @@ Usage:
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 import torch
 
@@ -89,12 +89,12 @@ class OffloadedLM:
     def _vram_budget(self):
         return self.vram_budget
 
-    def generate(self, *args, **kwargs):
+    def generate(self, *args, **kwargs) -> torch.Tensor:
         if self.kv_cache is not None:
             kwargs.setdefault("past_key_values", self.kv_cache)
         return self._model.generate(*args, **kwargs)
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args, **kwargs) -> Any:
         return self._model(*args, **kwargs)
 
     def __getattr__(self, name: str):
@@ -102,7 +102,7 @@ class OffloadedLM:
             raise AttributeError(name)
         return getattr(self._model, name)
 
-    def to(self, *args, **kwargs):
+    def to(self, *args, **kwargs) -> "OffloadedLM":
         self._model = self._model.to(*args, **kwargs)
         return self
 
