@@ -166,7 +166,7 @@ class StaticKVCache:
         else:
             self._k[layer_idx, :, :, start:end] = store_val_k
             self._v[layer_idx, :, :, start:end] = store_val_v
-        self._seq_lens[layer_idx] = max(self._seq_lens[layer_idx], end)
+        self._seq_lens[layer_idx] = end
         if self.static_shapes:
             k_out = self._k[layer_idx, :, :, : self.max_seq_len]
             v_out = self._v[layer_idx, :, :, : self.max_seq_len]

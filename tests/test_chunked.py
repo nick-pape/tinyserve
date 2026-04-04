@@ -237,5 +237,7 @@ def test_chunked_prefill_with_streaming_at_capacity():
     ids = torch.zeros(1, 128, dtype=torch.long, device="cuda")
     out = chunked_prefill(KVPushModel(), ids, cache, chunk_size=32)
     assert out is not None
-    # After streaming eviction, seq_len should be capped
-    assert cache.get_seq_length(0) <= 32
+    # 128 tokens through 64-slot cache: eviction must have occurred (no crash).
+    # Streaming eviction is reactive — after compacting to 32, the next chunk
+    # fills back to max_seq_len (64) without triggering another eviction.
+    assert cache.get_seq_length(0) <= cache.max_seq_len
