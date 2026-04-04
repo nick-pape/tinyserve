@@ -155,11 +155,14 @@ class StaticKVCache:
                 start = self._seq_lens[layer_idx]
                 end = start + new_tokens
                 healed = end <= self.max_seq_len
-            if not healed and self._vram_budget is not None:
-                if self._vram_budget.handle_overflow(end - self.max_seq_len):
-                    start = self._seq_lens[layer_idx]
-                    end = start + new_tokens
-                    healed = end <= self.max_seq_len
+            if (
+                not healed
+                and self._vram_budget is not None
+                and self._vram_budget.handle_overflow(end - self.max_seq_len)
+            ):
+                start = self._seq_lens[layer_idx]
+                end = start + new_tokens
+                healed = end <= self.max_seq_len
             if not healed:
                 raise KVCacheOverflow(end - self.max_seq_len)
         store_val_k = key_states

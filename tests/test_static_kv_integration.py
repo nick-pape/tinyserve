@@ -4,7 +4,6 @@ These tests use small synthetic models (Mixtral config) to validate
 KV cache correctness without loading GPT-OSS-20B.
 """
 
-
 import torch
 
 from tests.conftest import requires_cuda

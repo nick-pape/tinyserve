@@ -19,9 +19,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install ruff
-      - run: ruff check tinyserve/ scripts/ tests/
-      - run: ruff format --check tinyserve/ scripts/ tests/
+      - run: pip install ruff mypy
+      - name: Ruff lint
+        run: ruff check tinyserve/ scripts/ tests/
+      - name: Ruff format check
+        run: ruff format --check tinyserve/ scripts/ tests/
+      - name: Mypy type check (public API)
+        run: mypy tinyserve/__init__.py tinyserve/offload.py tinyserve/static_kv_cache.py tinyserve/expert_cache.py --ignore-missing-imports --no-error-summary || true
 
   test-cpu:
     runs-on: ubuntu-latest

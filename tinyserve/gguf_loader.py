@@ -16,8 +16,10 @@ from pathlib import Path
 
 import torch
 
-from .gguf_dequant import _dequant_fused_tensor  # noqa: F401 (re-exported for tests)
-from .gguf_dequant import _dequant_tensor
+from .gguf_dequant import (
+    _dequant_fused_tensor,  # noqa: F401 (re-exported for tests)
+    _dequant_tensor,
+)
 from .gguf_reader import GGUFReader, GGUFTensorInfo
 from .gguf_weights import (
     _build_expert_store_from_fused_reader,

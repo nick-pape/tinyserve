@@ -20,7 +20,7 @@ from ._model_hooks import OffloadedModel
 from .model_registry import profile_from_config
 
 
-class AttentionBackend(str, Enum):
+class AttentionBackend(str, Enum):  # noqa: UP042
     EAGER = "eager"
     SDPA = "sdpa"
     FLEX = "flex"

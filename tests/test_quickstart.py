@@ -2,7 +2,6 @@
 """Quickstart smoke tests — mirrors README examples, no GPU required."""
 
 
-
 def test_public_api_importable():
     from tinyserve import load_and_offload, load_from_gguf, offload_model
 

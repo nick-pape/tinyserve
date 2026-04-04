@@ -299,7 +299,7 @@ def create_app(
     try:
         from aiohttp import web
     except ImportError:
-        raise ImportError("aiohttp required for server: pip install aiohttp")
+        raise ImportError("aiohttp required for server: pip install aiohttp") from None
 
     metrics = ServerMetrics(model=getattr(engine, "model", None))
     concurrent_sem = asyncio.Semaphore(max_concurrent)

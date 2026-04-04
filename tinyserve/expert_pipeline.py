@@ -337,6 +337,7 @@ class ExpertPipeline:
             return
 
         if _cython_forward_hits is not None and not (_prof and _prof.enabled):
+
             def _fallback(p, h_):
                 return forward_from_packed(self.template, p, self._param_refs, h_)
 

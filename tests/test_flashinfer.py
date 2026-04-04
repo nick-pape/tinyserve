@@ -1,7 +1,6 @@
 """Tests for FlashInfer attention backend registration."""
 
 
-
 def test_register_flashinfer_returns_string():
     """_register_flashinfer_attention returns 'flashinfer' or 'eager'."""
     from tinyserve.offload import _register_flashinfer_attention
