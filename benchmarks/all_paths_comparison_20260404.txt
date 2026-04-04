@@ -1,0 +1,9 @@
+=== All Decode Paths Comparison ===
+
+model.generate (HF):      40 tok in 3594ms = 89.9ms/tok = 11.1 tok/s
+fast_generate:            40 tok in 3444ms = 86.1ms/tok = 11.6 tok/s
+fast_generate_layerloop:  40 tok in 3639ms = 91.0ms/tok = 11.0 tok/s
+raw decode (warm cache):  40 tok in 2088ms = 52.2ms/tok = 19.2 tok/s
+
+Ceiling: 31ms/tok = 32 tok/s
+Best pure decode: 52.2ms = 19.2 tok/s = 60% of ceiling
