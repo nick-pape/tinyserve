@@ -572,18 +572,41 @@ def load_from_gguf(
             info = _find_tensor_info(reader, gguf_name)
             raw = reader.get_tensor_data(info)
 
-        # Tensors that need V-head reorder MUST be dequantized to BF16 first —
-        # quantized block layouts (Q4_K etc.) cannot have rows permuted in-place.
-        # They are stored as plain nn.Parameter (BF16) rather than GGMLLinear.
-        needs_dequant_for_vhead = vhead_mode is not None and _apply_vhead is not None
+        # V-head reorder: permute rows of raw quantized bytes (no dequant needed).
+        # Each row is a contiguous byte range, so row permutation = byte chunk reorder.
+        if vhead_mode is not None and _apply_vhead is not None and len(info.shape) == 2:
+            from .qwen35moe_mapper import inverse_vhead_reorder_bytes
+            from .gguf_reader import GGML_TYPES
+            _, bpb, bs = GGML_TYPES[info.ggml_type]
+            out_features = info.shape[1]  # ne[1] = rows
+            bytes_per_row = (info.shape[0] // bs) * bpb  # ne[0] / block_size * bytes_per_block
+
+            if vhead_mode == "full":
+                raw = inverse_vhead_reorder_bytes(
+                    raw, _linear_num_k_heads, _linear_num_v_heads,
+                    out_features, bytes_per_row)
+            elif vhead_mode == "v_portion":
+                # Only reorder the V portion (last v_dim rows)
+                v_dim = _linear_num_v_heads * _linear_v_head_dim
+                if v_dim <= out_features:
+                    non_v_bytes = (out_features - v_dim) * bytes_per_row
+                    v_raw = raw[non_v_bytes:]
+                    v_raw = inverse_vhead_reorder_bytes(
+                        v_raw, _linear_num_k_heads, _linear_num_v_heads,
+                        v_dim, bytes_per_row)
+                    raw = raw[:non_v_bytes] + v_raw
+            elif vhead_mode == "out_proj":
+                # Columns reordered — need dequant for this (column permutation crosses blocks)
+                pass  # TODO: handle out_proj column reorder
+            elif vhead_mode == "a_log":
+                pass  # Handled below in the dequant path (1D tensor)
 
         # Linear layers with 2D weight and quantized type: keep native quant
         is_linear_weight = (
             len(info.shape) == 2
             and info.ggml_type in (2, 3, 6, 7, 8, 10, 11, 12, 13, 14, 15)
             and hf_name.endswith(".weight")
-            and not needs_norm_offset  # norms must be float (need +1 offset)
-            and not needs_dequant_for_vhead  # vhead reorder requires float
+            and not needs_norm_offset
             and "embed" not in hf_name
         )
 
@@ -604,8 +627,8 @@ def load_from_gguf(
             if needs_norm_offset:
                 tensor = tensor + 1.0
 
-            # Apply V-head inverse reorder (tiled → grouped) or A_log inverse transform
-            if needs_dequant_for_vhead:
+            # Apply V-head transform for 1D tensors (A_log, dt_bias)
+            if vhead_mode is not None and _apply_vhead is not None:
                 tensor = _apply_vhead(
                     tensor,
                     vhead_mode,

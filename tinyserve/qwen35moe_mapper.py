@@ -96,6 +96,35 @@ _VHEAD_REORDER_MODE: dict[str, str] = {
 }
 
 
+def inverse_vhead_reorder_bytes(
+    raw: bytes | torch.Tensor,
+    num_k_heads: int,
+    num_v_heads: int,
+    num_rows: int,
+    bytes_per_row: int,
+) -> bytes:
+    """Reorder raw quantized bytes by permuting rows (V-head tiled → grouped).
+
+    Each row is bytes_per_row contiguous bytes. The permutation operates
+    on row indices without touching block internals.
+    """
+    if isinstance(raw, torch.Tensor):
+        t = raw.reshape(num_rows, bytes_per_row)
+    else:
+        t = torch.frombuffer(bytearray(raw), dtype=torch.uint8).reshape(num_rows, bytes_per_row)
+
+    r = num_v_heads // num_k_heads
+    head_dim_rows = num_rows // num_v_heads  # rows per V-head
+
+    # [num_rows, bpr] -> [r, nk, head_dim_rows, bpr]
+    t = t.reshape(r, num_k_heads, head_dim_rows, bytes_per_row)
+    # tiled [r, nk] -> grouped [nk, r]
+    t = t.transpose(0, 1).contiguous()
+    # [nk, r, head_dim_rows, bpr] -> [num_rows, bpr]
+    t = t.reshape(num_rows, bytes_per_row)
+    return t.flatten().numpy().tobytes()
+
+
 def inverse_vhead_reorder(
     tensor: torch.Tensor,
     num_k_heads: int,
