@@ -241,9 +241,9 @@ class TestGGUFNbytesCalculation:
             (1, "F16", 2, 1),
             (2, "Q4_0", 18, 32),
             (8, "Q8_0", 34, 32),
-            (14, "Q4_K", 144, 256),
-            (15, "Q5_K", 176, 256),
-            (16, "Q6_K", 210, 256),
+            (12, "Q4_K", 144, 256),
+            (13, "Q5_K", 176, 256),
+            (14, "Q6_K", 210, 256),
         ],
     )
     def test_nbytes_for_quant_type(self, ggml_type, expected_name, bytes_per_block, block_size):

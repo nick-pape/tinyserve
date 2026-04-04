@@ -26,15 +26,11 @@ import time
 import torch
 
 from scripts.prompts import (
-    COLD_START,
     CODE_PROMPTS,
-    CONVERSATION_PROMPTS,
+    COLD_START,
     CREATIVE_PROMPTS,
     DOMAIN_MAP,
     DOMAIN_SHIFTS,
-    MATH_PROMPTS,
-    MULTI_TURN,
-    MULTILINGUAL_PROMPTS,
 )
 
 
@@ -156,7 +152,7 @@ def run_cold_start(model, tok, cache, gen_tokens=30):
         text, n, elapsed = _generate(model, tok, prompt, max_tokens=gen_tokens)
         stats = _collect_stats(cache)
         domain = prompt[:30] + "..."
-        print(f"  {domain:<35} HR={stats['hit_rate']:.1%}  {n/elapsed:.1f} tok/s")
+        print(f"  {domain:<35} HR={stats['hit_rate']:.1%}  {n / elapsed:.1f} tok/s")
         results.append({"prompt": prompt[:50], **stats})
 
     return results
@@ -177,16 +173,15 @@ def run_sustained(model, tok, cache, domain="code", gen_tokens=40, n_prompts=4):
         phase_misses = cache.misses - pre_misses
         phase_total = phase_hits + phase_misses
         hr = phase_hits / phase_total if phase_total > 0 else 0
-        print(f"  Prompt {i+1}/{n_prompts}: HR={hr:.1%}  {n/elapsed:.1f} tok/s  ({phase_hits}h/{phase_misses}m)")
-        results.append({"prompt_idx": i, "hit_rate": round(hr, 4), "tps": round(n/elapsed, 1)})
+        print(f"  Prompt {i + 1}/{n_prompts}: HR={hr:.1%}  {n / elapsed:.1f} tok/s  ({phase_hits}h/{phase_misses}m)")
+        results.append({"prompt_idx": i, "hit_rate": round(hr, 4), "tps": round(n / elapsed, 1)})
 
     overall = _collect_stats(cache)
     print(f"  Overall: HR={overall['hit_rate']:.1%}")
     return {"domain": domain, "per_prompt": results, "overall": overall}
 
 
-def run_domain_shift(model, tok, cache, warmup_domain, shift_domain,
-                     warmup_prompts=2, shift_prompts=2, gen_tokens=30):
+def run_domain_shift(model, tok, cache, warmup_domain, shift_domain, warmup_prompts=2, shift_prompts=2, gen_tokens=30):
     """Phase 3: Domain shift — warm on one domain, measure hit rate after switching."""
     print(f"\n=== Phase 3: Domain Shift ({warmup_domain} -> {shift_domain}) ===")
 
@@ -233,7 +228,7 @@ def run_per_layer_analysis(model, tok, cache, gen_tokens=50):
     layer_hrs = stats["per_layer_hit_rate"]
 
     print(f"  {'Layer':>6}  {'HR%':>6}  bar")
-    print(f"  {'---':>6}  {'---':>6}  {'---'*10}")
+    print(f"  {'---':>6}  {'---':>6}  {'---' * 10}")
     for li in sorted(layer_hrs.keys(), key=int):
         hr = layer_hrs[li]
         bar_len = int(hr * 30)
@@ -261,13 +256,13 @@ def run_expert_frequency(model, tok, cache, gen_tokens=50):
     for prompt in COLD_START + CODE_PROMPTS[:2] + CREATIVE_PROMPTS[:2]:
         _generate(model, tok, prompt, max_tokens=gen_tokens)
 
-    stats = _collect_stats(cache)
+    _collect_stats(cache)
     freq = cache.get_expert_frequencies()
 
     counts = sorted(freq.values(), reverse=True)
     total_accesses = sum(counts)
-    top_10_pct = sum(counts[:len(counts)//10]) / total_accesses if total_accesses > 0 else 0
-    top_25_pct = sum(counts[:len(counts)//4]) / total_accesses if total_accesses > 0 else 0
+    top_10_pct = sum(counts[: len(counts) // 10]) / total_accesses if total_accesses > 0 else 0
+    top_25_pct = sum(counts[: len(counts) // 4]) / total_accesses if total_accesses > 0 else 0
 
     all_experts = set()
     for li in range(24):
@@ -277,7 +272,7 @@ def run_expert_frequency(model, tok, cache, gen_tokens=50):
     never_accessed = len(all_experts - accessed)
 
     print(f"  Total expert accesses: {total_accesses}")
-    print(f"  Unique experts accessed: {len(freq)}/{24*32} ({len(freq)/(24*32):.1%})")
+    print(f"  Unique experts accessed: {len(freq)}/{24 * 32} ({len(freq) / (24 * 32):.1%})")
     print(f"  Never accessed: {never_accessed}")
     print(f"  Top 10% of experts handle {top_10_pct:.1%} of accesses")
     print(f"  Top 25% of experts handle {top_25_pct:.1%} of accesses")
@@ -295,8 +290,9 @@ def run_expert_frequency(model, tok, cache, gen_tokens=50):
 def main():
     parser = argparse.ArgumentParser(description="MoE expert cache benchmark")
     parser.add_argument("--model", default="openai/gpt-oss-20b")
-    parser.add_argument("--phases", default="cold,sustained,shift,layers,frequency",
-                       help="Comma-separated phases to run")
+    parser.add_argument(
+        "--phases", default="cold,sustained,shift,layers,frequency", help="Comma-separated phases to run"
+    )
     parser.add_argument("--policy", default="lru", help="Cache policy")
     parser.add_argument("--gen-tokens", type=int, default=30)
     parser.add_argument("--json", type=str, default=None, help="Save results to JSON file")
@@ -312,7 +308,7 @@ def main():
         return
 
     print(f"Cache: {cache.capacity} slots, policy={args.policy}")
-    print(f"Model: 24 layers x 32 experts, top_k=4, 238 slots = {238/(24*32):.0%} coverage")
+    print(f"Model: 24 layers x 32 experts, top_k=4, 238 slots = {238 / (24 * 32):.0%} coverage")
 
     results = {}
 

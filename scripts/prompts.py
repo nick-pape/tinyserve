@@ -62,11 +62,11 @@ CONVERSATION_PROMPTS = [
 
 # Phase 3: Domain shift sequences — each tuple is (warmup_domain, shift_domain)
 DOMAIN_SHIFTS = [
-    ("code", "creative"),       # technical → creative
-    ("math", "conversation"),   # formal → casual
-    ("code", "multilingual"),   # English → non-English
-    ("creative", "math"),       # narrative → symbolic
-    ("multilingual", "code"),   # non-English → English technical
+    ("code", "creative"),  # technical → creative
+    ("math", "conversation"),  # formal → casual
+    ("code", "multilingual"),  # English → non-English
+    ("creative", "math"),  # narrative → symbolic
+    ("multilingual", "code"),  # non-English → English technical
 ]
 
 DOMAIN_MAP = {

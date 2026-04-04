@@ -744,4 +744,5 @@ def load_and_offload(
         kv_offload=kv_offload,
         buddy_table_path=buddy_table_path,
         imatrix_path=imatrix_path,
+        offload_config=offload_config,
     )

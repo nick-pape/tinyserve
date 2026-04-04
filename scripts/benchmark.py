@@ -100,8 +100,8 @@ def run_benchmark(
 ) -> dict:
     from transformers import AutoTokenizer
 
-    from tinyserve.offload import load_and_offload
     from tinyserve._model_hooks import reset_temporal_routing
+    from tinyserve.offload import load_and_offload
 
     cap = 0 if no_cache else cache_capacity
     model = load_and_offload(
@@ -178,8 +178,8 @@ def run_context_scaling(
     """
     from transformers import AutoTokenizer
 
-    from tinyserve.offload import load_and_offload
     from tinyserve._model_hooks import reset_temporal_routing
+    from tinyserve.offload import load_and_offload
 
     if contexts is None:
         contexts = [10, 50, 100, 500, 1000, 2000, 3000]
@@ -211,8 +211,11 @@ def run_context_scaling(
         # Build KV cache for this context length
         if static_kv > 0:
             from tinyserve.static_kv_cache import StaticKVCache
+
             past_kv = StaticKVCache.from_model_config(
-                model.config, max_seq_len=static_kv, device="cuda",
+                model.config,
+                max_seq_len=static_kv,
+                device="cuda",
             )
         else:
             past_kv = None  # HF will create DynamicCache automatically
@@ -249,15 +252,17 @@ def run_context_scaling(
         decode_tps = gen_tokens / (decode_ms / 1000)
         total_tps = gen_tokens / ((prefill_ms + decode_ms) / 1000)
 
-        results.append({
-            "ctx": actual_ctx,
-            "prefill_ms": round(prefill_ms, 1),
-            "decode_ms": round(decode_ms, 1),
-            "decode_tps": round(decode_tps, 1),
-            "total_tps": round(total_tps, 1),
-            "prefill_experts_loaded": p_hits + p_misses,
-            "decode_hit_rate": round(d_hits / max(1, d_total), 4),
-        })
+        results.append(
+            {
+                "ctx": actual_ctx,
+                "prefill_ms": round(prefill_ms, 1),
+                "decode_ms": round(decode_ms, 1),
+                "decode_tps": round(decode_tps, 1),
+                "total_tps": round(total_tps, 1),
+                "prefill_experts_loaded": p_hits + p_misses,
+                "decode_hit_rate": round(d_hits / max(1, d_total), 4),
+            }
+        )
 
         # Free KV cache between context lengths to avoid OOM
         del past_kv
@@ -417,8 +422,8 @@ def _run_trace(args) -> None:
 
     from transformers import AutoTokenizer
 
-    from tinyserve.offload import load_and_offload
     from tinyserve._model_hooks import reset_temporal_routing
+    from tinyserve.offload import load_and_offload
 
     n_warmup = 5
     n_profile = 10
@@ -516,8 +521,8 @@ def _run_profile(args) -> None:
     """Load model, run 20 warmup + N profiled tokens, print phase report."""
     from transformers import AutoTokenizer
 
-    from tinyserve.offload import load_and_offload
     from tinyserve._model_hooks import reset_temporal_routing
+    from tinyserve.offload import load_and_offload
     from tinyserve.profiler import OffloadProfiler
 
     n_warmup = 20
@@ -600,8 +605,7 @@ def main():
     )
     parser.add_argument("--json", action="store_true")
     parser.add_argument(
-        "--context-scaling", action="store_true",
-        help="Benchmark prefill vs decode timing across context lengths"
+        "--context-scaling", action="store_true", help="Benchmark prefill vs decode timing across context lengths"
     )
     parser.add_argument(
         "--both-families", action="store_true", help="Run GPT-OSS-20B then Qwen3.5-35B-A3B and print side-by-side"
@@ -647,8 +651,10 @@ def main():
         "--capacity", type=int, default=None, help="Alias for --cache-capacity (for profiling convenience)"
     )
     parser.add_argument(
-        "--static-kv", type=int, default=0,
-        help="Pre-allocate StaticKVCache with this max_seq_len (0=use DynamicCache). Only for --context-scaling."
+        "--static-kv",
+        type=int,
+        default=0,
+        help="Pre-allocate StaticKVCache with this max_seq_len (0=use DynamicCache). Only for --context-scaling.",
     )
     args = parser.parse_args()
 
@@ -807,8 +813,8 @@ def main():
     if args.fate_diagnostic:
         from transformers import AutoTokenizer
 
-        from tinyserve.offload import load_and_offload
         from tinyserve._model_hooks import get_fate_accuracy_by_layer, reset_fate_stats, reset_temporal_routing
+        from tinyserve.offload import load_and_offload
 
         n_diag = 40
         policy = args.cache_policy if args.cache_policy else "lfru"
