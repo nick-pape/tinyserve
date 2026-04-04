@@ -141,17 +141,20 @@ class StaticKVCache:
         start = self._seq_lens[layer_idx]
         end = start + new_tokens
         if end > self.max_seq_len:
+            # Try self-healing before raising
+            healed = False
             if getattr(self, '_streaming', False):
-                # Self-healing: compact KV via StreamingLLM eviction, then retry.
-                # _evict_streaming resets _seq_lens[layer_idx] to sink+window,
-                # making room for the incoming tokens without raising.
                 self._evict_streaming(layer_idx)
-                return self.update(key_states, value_states, layer_idx, cache_kwargs)
-            if self._vram_budget is not None:
+                start = self._seq_lens[layer_idx]
+                end = start + new_tokens
+                healed = end <= self.max_seq_len
+            if not healed and self._vram_budget is not None:
                 if self._vram_budget.handle_overflow(end - self.max_seq_len):
-                    # KV extended — retry the write (now fits)
-                    return self.update(key_states, value_states, layer_idx, cache_kwargs)
-            raise KVCacheOverflow(end - self.max_seq_len)
+                    start = self._seq_lens[layer_idx]
+                    end = start + new_tokens
+                    healed = end <= self.max_seq_len
+            if not healed:
+                raise KVCacheOverflow(end - self.max_seq_len)
         store_val_k = key_states
         store_val_v = value_states
         if self._dtype != self._compute_dtype:
