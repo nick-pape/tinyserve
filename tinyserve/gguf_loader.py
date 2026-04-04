@@ -142,6 +142,8 @@ _LAYER_MAP: dict[str, str] = {
     "attn_v.weight": "self_attn.v_proj.weight",
     "attn_output.weight": "self_attn.o_proj.weight",
     "attn_norm.weight": "input_layernorm.weight",
+    "attn_q_norm.weight": "self_attn.q_norm.weight",
+    "attn_k_norm.weight": "self_attn.k_norm.weight",
     "ffn_norm.weight": "post_attention_layernorm.weight",
     "ffn_gate_inp.weight": "mlp.gate.weight",
     # Shared expert projections (separate gate/up/down)
