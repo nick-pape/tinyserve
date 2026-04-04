@@ -110,15 +110,19 @@ class MmapExpertStore:
     def _read_expert(self, layer_idx: int, expert_idx: int) -> bytes:
         """Read raw bytes for one expert (gate+up+down concatenated)."""
         projs = self._groups[(layer_idx, expert_idx)]
+        reader = self._reader
         parts = []
         for proj in ("gate", "up", "down"):
             info = projs[proj]
-            # Try name-based lookup first (per-expert GGUF)
-            try:
-                parts.append(self._reader.get_tensor_data(info.name))
-            except (KeyError, TypeError):
-                # Synthetic TensorInfo from from_fused — read by offset
-                parts.append(self._reader.get_tensor_data_by_offset(info.offset, info.nbytes))
+            if hasattr(reader, 'tensor_names'):
+                # MultiShardGGUFReader: name-based lookup if name exists, else offset
+                if info.name in reader.tensor_names:
+                    parts.append(reader.get_tensor_data(info.name))
+                else:
+                    parts.append(reader.get_tensor_data_by_offset(info.offset, info.nbytes))
+            else:
+                # Single-file GGUFReader: direct info-based read
+                parts.append(reader.get_tensor_data(info))
         return b"".join(parts)
 
     def get_expert_data(self, layer_idx: int, expert_idx: int) -> torch.Tensor:

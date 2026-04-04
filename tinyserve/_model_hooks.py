@@ -158,6 +158,7 @@ class OffloadedModel(nn.Module):
         profiler: OffloadProfiler | None = None,
         disk_offload: bool = False,
         ram_cache_gb: float = 0,
+        expert_store=None,
     ) -> OffloadedModel:
         model.eval()
         layers = model.layers
@@ -172,7 +173,20 @@ class OffloadedModel(nn.Module):
 
         ram_cache = None
         cpu_expert = None
-        if model_id is not None:
+        if expert_store is not None:
+            # Pre-built store path (e.g. MmapExpertStore from GGUF).
+            # Expert weights stay in the store; no extraction from model needed.
+            store = expert_store
+            template = _FusedExpertTemplate.from_layout(store.layout, first_container)
+            template = template.to(device)
+            if not template._is_mxfp4:
+                template = template.to(torch.bfloat16)
+            else:
+                for name in template._param_names:
+                    param = getattr(template, name)
+                    if param.dtype.is_floating_point:
+                        param.data = param.data.to(torch.bfloat16)
+        elif model_id is not None:
             # Native quantized path: load expert weights directly from safetensors.
             # Non-expert weights (attention, norms, etc.) are taken from `model`.
             layer_indices = [li for li, _ in moe_layers]

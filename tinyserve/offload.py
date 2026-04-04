@@ -413,6 +413,7 @@ def offload_model(
     kv_offload: bool = False,
     buddy_table_path: str | None = None,
     imatrix_path: str | None = None,
+    expert_store=None,
 ) -> "OffloadedLM":
     """Offload MoE experts from an HF model to CPU with GPU LRU cache.
 
@@ -501,6 +502,7 @@ def offload_model(
         adaptive_fate=adaptive_fate,
         disk_offload=disk_offload,
         ram_cache_gb=ram_cache_gb,
+        expert_store=expert_store,
     )
 
     if hasattr(model, "model"):
