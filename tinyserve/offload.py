@@ -200,13 +200,13 @@ def _register_flex_attention() -> str:
         transformers.AttentionInterface.register("flex", flex_attention_with_sinks)
         try:
             transformers.AttentionMaskInterface.register("flex", transformers.masking_utils.eager_mask)
-        except Exception:
+        except (AttributeError, TypeError):
             logger.warning("FlexAttention mask interface registration failed", exc_info=True)
         gpt_oss_mod = getattr(transformers.models, "gpt_oss", None)
         if gpt_oss_mod:
             gpt_oss_mod.modeling_gpt_oss.GptOssPreTrainedModel._supports_flex = True
         return AttentionBackend.FLEX
-    except Exception:
+    except (ImportError, AttributeError, RuntimeError):
         logger.warning("FlexAttention registration failed, falling back to eager", exc_info=True)
         return AttentionBackend.EAGER
 
@@ -254,13 +254,13 @@ def _register_sdpa_attention() -> str:
         transformers.AttentionInterface.register("sdpa", sdpa_attention_with_sinks)
         try:
             transformers.AttentionMaskInterface.register("sdpa", transformers.masking_utils.eager_mask)
-        except Exception:
+        except (AttributeError, TypeError):
             logger.warning("SDPA mask interface registration failed", exc_info=True)
         gpt_oss_mod = getattr(transformers.models, "gpt_oss", None)
         if gpt_oss_mod:
             gpt_oss_mod.modeling_gpt_oss.GptOssPreTrainedModel._supports_sdpa = True
         return AttentionBackend.SDPA
-    except Exception:
+    except (ImportError, AttributeError, RuntimeError):
         logger.warning("SDPA registration failed, falling back to eager", exc_info=True)
         return AttentionBackend.EAGER
 
@@ -310,13 +310,13 @@ def _register_flashinfer_attention() -> str:
         transformers.AttentionInterface.register("flashinfer", flashinfer_attention_with_sinks)
         try:
             transformers.AttentionMaskInterface.register("flashinfer", transformers.masking_utils.eager_mask)
-        except Exception:
+        except (AttributeError, TypeError):
             logger.warning("FlashInfer mask interface registration failed", exc_info=True)
         gpt_oss_mod = getattr(transformers.models, "gpt_oss", None)
         if gpt_oss_mod:
             gpt_oss_mod.modeling_gpt_oss.GptOssPreTrainedModel._supports_flashinfer = True
         return AttentionBackend.FLASHINFER
-    except Exception:
+    except (ImportError, AttributeError, RuntimeError):
         logger.warning("FlashInfer registration failed, falling back to eager", exc_info=True)
         return AttentionBackend.EAGER
 

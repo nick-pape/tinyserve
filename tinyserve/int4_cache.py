@@ -127,7 +127,7 @@ def load_int4_cache(
             "num_experts": int(metadata["num_experts"]),
             "model_hash": metadata["model_hash"],
         }
-    except Exception:
+    except (OSError, RuntimeError, KeyError, json.JSONDecodeError):
         logger.warning("Failed to load expert cache from disk, will rebuild", exc_info=True)
         return None
 

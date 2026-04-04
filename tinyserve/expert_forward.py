@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 try:
     from .csrc import get_expert_loop as _get_expert_loop
-except Exception:
+except ImportError:
     logger.warning("C++ expert loop extension not available, using Python fallback")
 
     def _get_expert_loop():

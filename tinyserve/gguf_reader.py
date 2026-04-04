@@ -82,7 +82,7 @@ class GGUFReader:
         self.version: int = 0
         try:
             self._parse()
-        except Exception:
+        except (OSError, struct.error, UnicodeDecodeError, ValueError):
             self._file.close()
             raise
 

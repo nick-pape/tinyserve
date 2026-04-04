@@ -29,13 +29,13 @@ try:
     from .triton_dot_scaled import dot_scaled_vecmat as _dot_scaled_vecmat
 
     _MXFP4_BACKEND = "dot_scaled"
-except Exception:
+except ImportError:
     logger.debug("triton dot_scaled not available")
     try:
         from .triton_dequant import fused_dequant_vecmat as _fused_dequant_vecmat
 
         _MXFP4_BACKEND = "triton_sw"
-    except Exception:
+    except ImportError:
         logger.debug("triton fused_dequant not available, using pytorch backend")
 
 

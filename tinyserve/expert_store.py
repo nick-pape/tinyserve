@@ -408,7 +408,7 @@ class ExpertStore:
                 cache_path, data, serialized_specs,
                 num_moe_layers, num_experts, model_hash_val,
             )
-        except Exception:
+        except (OSError, RuntimeError):
             logger.warning("Expert cache save failed (non-fatal)", exc_info=True)
 
         if disk_offload:

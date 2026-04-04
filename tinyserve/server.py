@@ -218,7 +218,7 @@ def _make_chat_prompt(messages: list[dict], tokenizer=None) -> str:
             return tokenizer.apply_chat_template(
                 messages, tokenize=False, add_generation_prompt=True,
             )
-        except Exception:
+        except (ValueError, KeyError):
             logger.warning("chat template application failed, falling back to manual format", exc_info=True)
     parts = []
     for m in messages:
@@ -374,7 +374,7 @@ def create_app(
     async def handle_chat_completions(http_req):
         try:
             data = await http_req.json()
-        except Exception:
+        except (json.JSONDecodeError, ValueError):
             logger.warning("Failed to parse JSON request body", exc_info=True)
             return web.json_response(_error_json(400, "invalid JSON body"), status=400)
 
@@ -402,7 +402,7 @@ def create_app(
     async def handle_completions(http_req):
         try:
             data = await http_req.json()
-        except Exception:
+        except (json.JSONDecodeError, ValueError):
             logger.warning("Failed to parse JSON request body", exc_info=True)
             return web.json_response(_error_json(400, "invalid JSON body"), status=400)
 

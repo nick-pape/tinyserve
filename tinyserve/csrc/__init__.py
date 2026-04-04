@@ -28,7 +28,7 @@ def _load_expert_loop():
         )
         HAS_CPP_LOOP = True
         _logger.info("C++ expert_loop extension compiled and loaded")
-    except Exception as exc:
+    except (ImportError, OSError) as exc:
         _logger.debug("C++ expert_loop extension unavailable: %s", exc)
         HAS_CPP_LOOP = False
         _expert_loop = None
