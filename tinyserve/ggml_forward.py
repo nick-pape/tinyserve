@@ -89,9 +89,16 @@ class GGMLExpertForward:
                        ggml_types: dict[str, int] | None = None) -> torch.Tensor:
         if ggml_types is None:
             ggml_types = self._ggml_types
-        gate_data = packed[self._gate_off : self._gate_end]
-        up_data = packed[self._up_off : self._up_end]
-        down_data = packed[self._down_off : self._down_end]
+
+        # For mixed quant, slice to actual byte count (buffer may be padded)
+        from .gguf_reader import GGML_TYPES
+        def _actual_bytes(proj_shape, gtype):
+            _, bpb, bs = GGML_TYPES[gtype]
+            return (proj_shape[0] * proj_shape[1] // bs) * bpb
+
+        gate_data = packed[self._gate_off : self._gate_off + _actual_bytes(self._proj_shapes["gate"], ggml_types["gate"])]
+        up_data = packed[self._up_off : self._up_off + _actual_bytes(self._proj_shapes["up"], ggml_types["up"])]
+        down_data = packed[self._down_off : self._down_off + _actual_bytes(self._proj_shapes["down"], ggml_types["down"])]
 
         op = torch.ops.tinyserve_ggml.ggml_mul_mat_vec
 
@@ -111,15 +118,24 @@ class GGMLExpertForward:
                           ggml_types: dict[str, int] | None = None) -> torch.Tensor:
         from .gguf_dequant_torch import dequant_tensor
 
-        gate_bytes = packed[self._gate_off : self._gate_end]
-        up_bytes = packed[self._up_off : self._up_end]
-        down_bytes = packed[self._down_off : self._down_end]
-
-        # GGML shape (ne[0], ne[1]) = (in_feat, out_feat). Dequant needs (ne[1], ne[0]) = (out, in)
-        # because the raw data is laid out as ne[1] rows of ne[0] elements.
         if ggml_types is None:
             ggml_types = self._ggml_types
         gs, us, ds = self._proj_shapes["gate"], self._proj_shapes["up"], self._proj_shapes["down"]
+
+        # For mixed quant, compute actual byte count per projection from the type
+        from .gguf_reader import GGML_TYPES
+        def _actual_bytes(proj_shape, gtype):
+            _, bpb, bs = GGML_TYPES[gtype]
+            return (proj_shape[0] * proj_shape[1] // bs) * bpb
+
+        gate_nbytes = _actual_bytes(gs, ggml_types["gate"])
+        up_nbytes = _actual_bytes(us, ggml_types["up"])
+        down_nbytes = _actual_bytes(ds, ggml_types["down"])
+
+        gate_bytes = packed[self._gate_off : self._gate_off + gate_nbytes]
+        up_bytes = packed[self._up_off : self._up_off + up_nbytes]
+        down_bytes = packed[self._down_off : self._down_off + down_nbytes]
+
         gate_w = dequant_tensor(gate_bytes.cpu(), ggml_types["gate"], (gs[1], gs[0]))
         up_w = dequant_tensor(up_bytes.cpu(), ggml_types["up"], (us[1], us[0]))
         down_w = dequant_tensor(down_bytes.cpu(), ggml_types["down"], (ds[1], ds[0]))
