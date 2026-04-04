@@ -523,7 +523,16 @@ def load_from_gguf(
         else:
             info = _find_tensor_info(reader, gguf_name)
 
-        tensor = _dequant_tensor(reader, info, gguf_name, device)
+        # Use vectorized dequant (100x faster than loop-based _dequant_tensor)
+        try:
+            from .gguf_dequant_torch import dequant_tensor as _fast_dequant
+            if is_multi:
+                raw = reader.get_tensor_data(gguf_name)
+            else:
+                raw = reader.get_tensor_data(info)
+            tensor = _fast_dequant(raw, info.ggml_type, tuple(info.shape)).to(torch.bfloat16).to(device)
+        except (ImportError, ValueError):
+            tensor = _dequant_tensor(reader, info, gguf_name, device)
 
         # Handle shape mismatches (e.g. 1D norm weights)
         if tensor.shape != param.shape:
