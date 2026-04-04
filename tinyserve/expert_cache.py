@@ -49,6 +49,8 @@ class ExpertCache:
         if num_layers > 1 or num_experts > 1:
             self._slot_map_cpu = np.full((num_layers, num_experts), -1, dtype=np.int32)
             self._slot_map = torch.from_numpy(self._slot_map_cpu).to(dtype=torch.int32, device=device)
+        # Pre-allocated scalar -1 tensor for lookup_slots fallback path.
+        self._neg_one = torch.tensor(-1, dtype=torch.int32, device=device)
 
     def lookup(self, layer_idx: int, expert_idx: int) -> int | None:
         slot = self._policy.lookup((layer_idx, expert_idx))
@@ -117,7 +119,7 @@ class ExpertCache:
         """Sync CPU slot_map to GPU. Called automatically by lookup_slots."""
         if not self._slot_map_dirty or self._slot_map_cpu is None:
             return
-        self._slot_map.copy_(torch.from_numpy(self._slot_map_cpu))
+        self._slot_map.copy_(torch.from_numpy(self._slot_map_cpu), non_blocking=True)
         self._slot_map_dirty = False
 
     def lookup_slots(self, layer_idx: int, expert_ids: torch.Tensor) -> torch.Tensor:
@@ -141,8 +143,7 @@ class ExpertCache:
         ids = expert_ids.long().to(self.device)
         safe = ids.clamp(max=ne - 1)
         result = self._slot_map[layer_idx, safe]
-        result = torch.where(ids < ne, result,
-            torch.tensor(-1, dtype=torch.int32, device=self.device))
+        result = torch.where(ids < ne, result, self._neg_one)
         return result
 
     def store_from_buffer(self, slot: int, buf) -> None:

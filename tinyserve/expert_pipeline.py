@@ -63,6 +63,7 @@ class ExpertPipeline:
         shared_stream: torch.cuda.Stream | None = None,
         ram_cache=None,
         cpu_expert=None,
+        max_top_k: int = 8,
     ):
         self.store = store
         self.template = template
@@ -104,6 +105,10 @@ class ExpertPipeline:
         # C++ expert loop: precomputed layout args + module handle.
         self._cpp_layout_args = _build_cpp_layout_args(bf16_layout, self._act_fn)
         self._cpp_ext = _get_expert_loop() if self._cpp_layout_args is not None else None
+        # Pre-allocated decode hot-path buffers: avoids torch.tensor() per token.
+        # max_top_k covers top_k and fate_top_k (top_k+1). Sized once; sliced per call.
+        self._slots_buf = torch.empty(max_top_k, dtype=torch.int32, device=device)
+        self._weights_buf = torch.empty(max_top_k, dtype=torch.float32, device=device)
 
     def execute_layer_experts(
         self,
@@ -219,11 +224,16 @@ class ExpertPipeline:
         if isinstance(expert_ids, torch.Tensor) and hasattr(cache, "lookup_slots"):
             with _prof.phase("cache_lookup") if _prof else nullcontext():
                 slots = cache.lookup_slots(layer_idx, expert_ids)
-                slots_list = slots.tolist()
+                # Consolidate two .tolist() calls (= two CUDA syncs) into one:
+                # stack expert_ids + slots into a single [2, top_k] tensor and
+                # call .tolist() once.  Unpack the two rows on the CPU side.
+                _eids_int = expert_ids.int().to(slots.device)
+                _both = torch.stack([_eids_int, slots], dim=0).tolist()
+                expert_ids_list: list[int] = _both[0]
+                slots_list: list[int] = _both[1]
 
             hits: list[tuple[int, int]] = []
             misses: list[int] = []
-            expert_ids_list: list[int] = expert_ids.tolist()
             if _cython_classify_hits is not None:
                 hits, misses = _cython_classify_hits(expert_ids_list, slots_list)
                 for i, slot in hits:
@@ -284,12 +294,12 @@ class ExpertPipeline:
             and not any(s in self._prefetch_events for _, s in hits)
         ):
             _args = self._cpp_layout_args
-            slots_tensor = torch.tensor(
-                [s for _, s in hits], dtype=torch.int32, device=h.device
-            )
-            weights_tensor = torch.tensor(
-                [weights[i].item() for i, _ in hits], dtype=torch.float32, device=h.device
-            )
+            n_hits = len(hits)
+            for _j, (_i, _s) in enumerate(hits):
+                self._slots_buf[_j] = _s
+                self._weights_buf[_j] = weights[_i]
+            slots_tensor = self._slots_buf[:n_hits]
+            weights_tensor = self._weights_buf[:n_hits]
             out = _cpp.fast_expert_forward(
                 h,
                 slots_tensor,
