@@ -10,12 +10,17 @@ data stays in the mmap'd file (OS page cache), never in pinned RAM.
 
 from __future__ import annotations
 
+import json
+import mmap
+import os
+import struct
 from pathlib import Path
 
 import torch
 
 from .expert_cache import ExpertCache
 from .expert_store import ExpertBuffer, TensorLayout
+from .gguf_dequant import _dequant_fused_tensor
 from .gguf_loader import open_gguf
 from .gguf_reader import GGUFTensorInfo
 
@@ -143,3 +148,245 @@ class MmapExpertStore:
 
     def close(self) -> None:
         self._reader.close()
+
+
+def quantize_to_q8_0(tensor: torch.Tensor) -> bytes:
+    """Quantize a float tensor to Q8_0 format.
+
+    Q8_0 format: 34 bytes per 32 elements.
+    Layout per block: float16 scale (2 bytes) + int8[32] quants (32 bytes).
+    Scale is amax/127 so max absolute value maps to ±127.
+
+    Args:
+        tensor: Any shape float tensor. Trailing elements (< 32) are dropped.
+
+    Returns:
+        Raw bytes in Q8_0 format, n_blocks * 34 bytes.
+    """
+    flat = tensor.flatten().float()
+    n_blocks = flat.shape[0] // 32
+    blocks = flat[: n_blocks * 32].reshape(n_blocks, 32)
+    amax = blocks.abs().amax(dim=1)
+    scales = (amax / 127.0).clamp(min=1e-10)
+    quants = torch.round(blocks / scales.unsqueeze(1)).clamp(-128, 127).to(torch.int8)
+    scales_f16 = scales.to(torch.float16)
+    scales_bytes = scales_f16.numpy().tobytes()
+    quants_bytes = quants.numpy().tobytes()
+    result = bytearray(n_blocks * 34)
+    for i in range(n_blocks):
+        result[i * 34 : i * 34 + 2] = scales_bytes[i * 2 : i * 2 + 2]
+        result[i * 34 + 2 : i * 34 + 34] = quants_bytes[i * 32 : i * 32 + 32]
+    return bytes(result)
+
+
+class FusedMmapExpertStore:
+    """Expert store backed by a pre-converted .experts file.
+
+    The .experts file contains Q8_0 data for every (layer, expert) pair,
+    laid out in layer-major order. The file header is a JSON blob prefixed
+    by a 4-byte little-endian length.
+
+    Attributes:
+        num_layers: number of MoE layers.
+        num_experts: number of experts per layer.
+        expert_bytes: bytes per expert (Q8_0, gate+up+down contiguous).
+        buffer_expert_bytes: same as expert_bytes.
+        layout: TensorLayout with {"gate", "up", "down"} as uint8.
+        _bf16_layout: same object as layout.
+        ggml_types: {"gate": 8, "up": 8, "down": 8} (Q8_0 = 8).
+        proj_shapes: {"gate": (N, K), "up": (N, K), "down": (K, N)}.
+    """
+
+    def __init__(
+        self,
+        experts_path: Path,
+        header: dict,
+        data_offset: int,
+        mm: mmap.mmap,
+        f,
+    ):
+        self._experts_path = experts_path
+        self._header = header
+        self._data_offset = data_offset
+        self._mm = mm
+        self._f = f
+
+        self.num_layers: int = header["num_layers"]
+        self.num_experts: int = header["num_experts"]
+
+        gate_bytes: int = header["gate_bytes"]
+        up_bytes: int = header["up_bytes"]
+        down_bytes: int = header["down_bytes"]
+
+        self.ggml_types: dict[str, int] = {"gate": 8, "up": 8, "down": 8}
+        self.proj_shapes: dict[str, tuple[int, int]] = {
+            "gate": tuple(header["gate_shape"]),
+            "up": tuple(header["up_shape"]),
+            "down": tuple(header["down_shape"]),
+        }
+
+        specs: dict[str, tuple[tuple[int, ...], torch.dtype]] = {
+            "gate": ((gate_bytes,), torch.uint8),
+            "up": ((up_bytes,), torch.uint8),
+            "down": ((down_bytes,), torch.uint8),
+        }
+        self.layout = TensorLayout(specs)
+        self._bf16_layout = self.layout
+        self.expert_bytes: int = header["expert_bytes"]
+        self.buffer_expert_bytes: int = self.expert_bytes
+
+        self._pinned_staging = torch.empty(self.expert_bytes, dtype=torch.uint8).pin_memory()
+
+    @property
+    def _fp8(self) -> bool:
+        return False
+
+    def _expert_offset(self, layer_idx: int, expert_idx: int) -> int:
+        return self._data_offset + (layer_idx * self.num_experts + expert_idx) * self.expert_bytes
+
+    def _read_expert(self, layer_idx: int, expert_idx: int) -> bytes:
+        off = self._expert_offset(layer_idx, expert_idx)
+        return self._mm[off : off + self.expert_bytes]
+
+    def get_expert_data(self, layer_idx: int, expert_idx: int) -> torch.Tensor:
+        raw = self._read_expert(layer_idx, expert_idx)
+        return torch.frombuffer(bytearray(raw), dtype=torch.uint8)
+
+    def allocate_buffer(self, device: torch.device) -> ExpertBuffer:
+        return ExpertBuffer(self.layout, device)
+
+    def copy_to_buffer(
+        self,
+        buf: ExpertBuffer,
+        layer_idx: int,
+        expert_idx: int,
+        non_blocking: bool = False,
+    ) -> None:
+        raw = self._read_expert(layer_idx, expert_idx)
+        self._pinned_staging[: len(raw)].copy_(
+            torch.frombuffer(bytearray(raw), dtype=torch.uint8)
+        )
+        buf.packed.copy_(self._pinned_staging, non_blocking=non_blocking)
+
+    def copy_to_buffer_slot(
+        self,
+        cache: ExpertCache,
+        slot: int,
+        layer_idx: int,
+        expert_idx: int,
+    ) -> None:
+        raw = self._read_expert(layer_idx, expert_idx)
+        self._pinned_staging[: len(raw)].copy_(
+            torch.frombuffer(bytearray(raw), dtype=torch.uint8)
+        )
+        cache._packed[slot].copy_(self._pinned_staging)
+
+    def close(self) -> None:
+        self._mm.close()
+        self._f.close()
+
+
+def _convert_fused_to_per_expert(gguf_path: Path, experts_path: Path) -> None:
+    """Convert fused GGUF expert tensors to per-expert Q8_0 .experts file.
+
+    Writes to a .tmp file first, then atomically renames to experts_path.
+    Processes one layer at a time to bound peak RAM usage.
+    """
+    tmp_path = Path(str(experts_path) + ".tmp")
+    reader = open_gguf(gguf_path)
+    fused = reader.list_fused_expert_tensors()
+
+    if not fused:
+        reader.close()
+        raise ValueError(f"No fused expert tensors found in {gguf_path}")
+
+    layers = sorted(fused.keys())
+    first_layer_info = fused[layers[0]]
+    gate_info = first_layer_info["gate"]
+    up_info = first_layer_info["up"]
+    down_info = first_layer_info["down"]
+
+    n_experts = gate_info.shape[2]
+    gate_shape = (gate_info.shape[0], gate_info.shape[1])
+    up_shape = (up_info.shape[0], up_info.shape[1])
+    down_shape = (down_info.shape[0], down_info.shape[1])
+
+    # Compute Q8_0 byte sizes for each projection
+    gate_elements = gate_shape[0] * gate_shape[1]
+    up_elements = up_shape[0] * up_shape[1]
+    down_elements = down_shape[0] * down_shape[1]
+    gate_bytes = (gate_elements // 32) * 34
+    up_bytes = (up_elements // 32) * 34
+    down_bytes = (down_elements // 32) * 34
+    expert_bytes = gate_bytes + up_bytes + down_bytes
+
+    header = {
+        "num_layers": len(layers),
+        "num_experts": n_experts,
+        "ggml_type": 8,
+        "gate_shape": list(gate_shape),
+        "up_shape": list(up_shape),
+        "down_shape": list(down_shape),
+        "gate_bytes": gate_bytes,
+        "up_bytes": up_bytes,
+        "down_bytes": down_bytes,
+        "expert_bytes": expert_bytes,
+    }
+    header_bytes = json.dumps(header).encode("utf-8")
+
+    with open(tmp_path, "wb") as f:
+        f.write(struct.pack("<I", len(header_bytes)))
+        f.write(header_bytes)
+
+        for layer_idx in layers:
+            info = fused[layer_idx]
+            gate_f32 = _dequant_fused_tensor(reader, info["gate"], info["gate"].name, "cpu").float()
+            up_f32 = _dequant_fused_tensor(reader, info["up"], info["up"].name, "cpu").float()
+            down_f32 = _dequant_fused_tensor(reader, info["down"], info["down"].name, "cpu").float()
+
+            for expert_idx in range(n_experts):
+                gate_e = gate_f32[:, :, expert_idx]
+                up_e = up_f32[:, :, expert_idx]
+                down_e = down_f32[:, :, expert_idx]
+                f.write(quantize_to_q8_0(gate_e))
+                f.write(quantize_to_q8_0(up_e))
+                f.write(quantize_to_q8_0(down_e))
+
+            del gate_f32, up_f32, down_f32
+
+    reader.close()
+    os.rename(tmp_path, experts_path)
+
+
+def _from_experts_file(experts_path: Path) -> FusedMmapExpertStore:
+    """Open an existing .experts file and return a FusedMmapExpertStore."""
+    f = open(experts_path, "rb")
+    header_len = struct.unpack("<I", f.read(4))[0]
+    header = json.loads(f.read(header_len).decode("utf-8"))
+    data_offset = 4 + header_len
+    mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
+    return FusedMmapExpertStore(experts_path, header, data_offset, mm, f)
+
+
+def from_fused_gguf(path: str | Path) -> FusedMmapExpertStore:
+    """Load fused GGUF expert tensors, converting to .experts file on first call.
+
+    On the first call, dequantizes all fused expert tensors to float32,
+    slices per expert, requantizes to Q8_0, and writes a .experts file
+    adjacent to the .gguf file. Subsequent calls reuse the .experts file
+    directly via mmap.
+
+    Args:
+        path: Path to a GGUF file containing fused expert tensors
+              (blk.<L>.ffn_{gate,up,down}_exps.weight).
+
+    Returns:
+        FusedMmapExpertStore backed by the .experts file.
+    """
+    path = Path(path)
+    experts_path = Path(str(path) + ".experts")
+
+    if not experts_path.exists():
+        _convert_fused_to_per_expert(path, experts_path)
+
+    return _from_experts_file(experts_path)
