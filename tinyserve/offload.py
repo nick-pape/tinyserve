@@ -57,6 +57,9 @@ class TinyserveConfig:
     buddy_table_path: str | None = None
     imatrix_path: str | None = None
     attn_implementation: str | AttentionBackend | None = None
+    streaming: bool = False
+    streaming_sink_size: int = 4
+    streaming_window_size: int = 1024
 
 
 class OffloadedLM:
@@ -328,7 +331,7 @@ def _apply_offload_config(offload_config: TinyserveConfig, locals_dict: dict) ->
         "cache_capacity", "cache_policy", "cache_bias", "adaptive_fate",
         "max_seq_len", "kv_dtype", "gpu_memory_utilization", "fp8",
         "disk_offload", "ram_cache_gb", "kv_offload", "buddy_table_path",
-        "imatrix_path",
+        "imatrix_path", "streaming", "streaming_sink_size", "streaming_window_size",
     ]
     for f in fields:
         locals_dict[f] = getattr(offload_config, f)
@@ -482,11 +485,16 @@ def offload_model(
     kv_cache = None
     kv_vram = 0
     use_flex = attn_implementation == AttentionBackend.FLEX
+    streaming = getattr(offload_config, "streaming", False) if offload_config is not None else False
+    streaming_sink_size = getattr(offload_config, "streaming_sink_size", 4) if offload_config is not None else 4
+    streaming_window_size = getattr(offload_config, "streaming_window_size", 1024) if offload_config is not None else 1024
     if max_seq_len > 0:
         storage_device = "cpu" if kv_offload else None
         kv_cache = StaticKVCache.from_model_config(model_config, max_seq_len=max_seq_len, device=device, dtype=kv_dtype, storage_device=storage_device)
         if use_flex:
             kv_cache.static_shapes = True
+        if streaming:
+            kv_cache.enable_streaming(sink_size=streaming_sink_size, window_size=streaming_window_size)
         kv_vram = kv_cache.vram_bytes
 
     if buf_bytes > 0:

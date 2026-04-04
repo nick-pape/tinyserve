@@ -30,10 +30,15 @@ def cmd_run(args: argparse.Namespace) -> None:
         model = load_from_gguf(gguf_path, model_id=args.model)
         tokenizer = AutoTokenizer.from_pretrained(args.model)
     else:
-        from .offload import load_and_offload
+        from .offload import TinyserveConfig, load_and_offload
 
         print(f"Loading {args.model} ...")
-        model = load_and_offload(args.model)
+        cfg = TinyserveConfig(
+            streaming=args.streaming,
+            streaming_sink_size=args.streaming_sink_size,
+            streaming_window_size=args.streaming_window_size,
+        )
+        model = load_and_offload(args.model, offload_config=cfg)
         tokenizer = AutoTokenizer.from_pretrained(args.model)
     print("Ready. Type a prompt (Ctrl-D to quit).\n")
 
@@ -109,6 +114,9 @@ def main() -> None:
     p_run.add_argument("--gguf", default=None, help="Path to GGUF file (loads model from GGUF instead of HF)")
     p_run.add_argument("--max-tokens", type=int, default=100)
     p_run.add_argument("--chunk-size", type=int, default=0, help="Prefill chunk size (0 = full prefill)")
+    p_run.add_argument("--streaming", action="store_true", help="Enable StreamingLLM infinite context")
+    p_run.add_argument("--streaming-sink-size", type=int, default=4, help="StreamingLLM sink tokens (default: 4)")
+    p_run.add_argument("--streaming-window-size", type=int, default=1024, help="StreamingLLM window tokens (default: 1024)")
 
     p_info = sub.add_parser("info", help="Print model profile and expert layout")
     p_info.add_argument("--model", required=True, help="HuggingFace model id or local path")

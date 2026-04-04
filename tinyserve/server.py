@@ -474,17 +474,26 @@ def main():
     parser.add_argument("--timeout", type=float, default=60.0)
     parser.add_argument("--max-pending", type=int, default=32)
     parser.add_argument("--chunk-size", type=int, default=0, help="Prefill chunk size (0 = full prefill)")
+    parser.add_argument("--streaming", action="store_true", help="Enable StreamingLLM infinite context")
+    parser.add_argument("--streaming-sink-size", type=int, default=4, help="StreamingLLM sink tokens (default: 4)")
+    parser.add_argument("--streaming-window-size", type=int, default=1024, help="StreamingLLM window tokens (default: 1024)")
     args = parser.parse_args()
 
-    from .offload import load_and_offload
+    from .offload import TinyserveConfig, load_and_offload
     from transformers import AutoTokenizer
 
     kv_dtype = torch.float8_e4m3fn if args.kv_fp8 else torch.bfloat16
-    model = load_and_offload(
-        args.model, cache_capacity=args.cache_capacity,
+    cfg = TinyserveConfig(
+        cache_capacity=args.cache_capacity,
         cache_policy=args.cache_policy,
-        max_seq_len=args.max_seq_len, kv_dtype=kv_dtype,
+        max_seq_len=args.max_seq_len,
+        kv_dtype=kv_dtype,
+        gpu_memory_utilization=args.gpu_memory_utilization,
+        streaming=args.streaming,
+        streaming_sink_size=args.streaming_sink_size,
+        streaming_window_size=args.streaming_window_size,
     )
+    model = load_and_offload(args.model, offload_config=cfg)
     tokenizer = AutoTokenizer.from_pretrained(args.model)
     engine = InferenceEngine(model, tokenizer, args.max_seq_len, kv_dtype, chunk_size=args.chunk_size)
 
