@@ -1,0 +1,19 @@
+=== Layer Dispatch Overhead Measurement (2026-04-04) ===
+
+PATH A — HF model.forward():          55.04 ms/tok  (18.2 tok/s)
+PATH B — manual layer.forward() loop:  49.33 ms/tok  (20.3 tok/s)
+PATH B delta vs PATH A:                +5.71 ms/tok
+
+MICROBENCHMARK (layer 0 isolation, N=200):
+  layer()         [__call__ path]:  1.675 ms/call
+  layer.forward() [raw fwd path]:   1.690 ms/call
+  dispatch overhead per call:       -15.2 us
+  24-layer total dispatch overhead: -364.0 us  = -0.364 ms/tok
+
+CONCLUSION:
+  Hypothesis: ~8ms/tok from nn.Module.__call__ overhead
+  Actual dispatch overhead (micro): -0.364 ms/tok
+  Profile cross-check (_call_impl tottime/40tok): 0.029s / 40 = 0.725 ms/tok
+  Cython layer loop max savings: ~0.72 ms/tok
+  Current bottleneck: expert I/O (mmap page faults, ~945ms of remaining budget)
+  Verdict: layer dispatch overhead is -0.7% of tok time — NOT worth Cython
