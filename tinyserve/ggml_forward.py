@@ -105,14 +105,17 @@ class GGMLExpertForward:
         up_bytes = packed[self._up_off : self._up_end]
         down_bytes = packed[self._down_off : self._down_end]
 
-        gate_w = dequant_tensor(gate_bytes.cpu(), self._ggml_types["gate"], self._proj_shapes["gate"])
-        up_w = dequant_tensor(up_bytes.cpu(), self._ggml_types["up"], self._proj_shapes["up"])
-        down_w = dequant_tensor(down_bytes.cpu(), self._ggml_types["down"], self._proj_shapes["down"])
+        # GGML shape (ne[0], ne[1]) = (in_feat, out_feat). Dequant needs (ne[1], ne[0]) = (out, in)
+        # because the raw data is laid out as ne[1] rows of ne[0] elements.
+        gs, us, ds = self._proj_shapes["gate"], self._proj_shapes["up"], self._proj_shapes["down"]
+        gate_w = dequant_tensor(gate_bytes.cpu(), self._ggml_types["gate"], (gs[1], gs[0]))
+        up_w = dequant_tensor(up_bytes.cpu(), self._ggml_types["up"], (us[1], us[0]))
+        down_w = dequant_tensor(down_bytes.cpu(), self._ggml_types["down"], (ds[1], ds[0]))
 
-        # GGML stores (in_features, out_features), F.linear expects (out_features, in_features)
-        gate_w = gate_w.T.contiguous().to(device=h.device, dtype=h.dtype)
-        up_w = up_w.T.contiguous().to(device=h.device, dtype=h.dtype)
-        down_w = down_w.T.contiguous().to(device=h.device, dtype=h.dtype)
+        # Dequant now gives (out_features, in_features) — F.linear expects this directly
+        gate_w = gate_w.to(device=h.device, dtype=h.dtype)
+        up_w = up_w.to(device=h.device, dtype=h.dtype)
+        down_w = down_w.to(device=h.device, dtype=h.dtype)
 
         gate_out = F.linear(h, gate_w)
         up_out = F.linear(h, up_w)
