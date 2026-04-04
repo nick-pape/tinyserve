@@ -17,8 +17,8 @@ if TYPE_CHECKING:
 def _check_ggml() -> bool:
     try:
         return (
-            hasattr(torch.ops, "tinyserve_ggml_ops")
-            and hasattr(torch.ops.tinyserve_ggml_ops, "ggml_mul_mat_vec")
+            hasattr(torch.ops, "tinyserve_ggml")
+            and hasattr(torch.ops.tinyserve_ggml, "ggml_mul_mat_vec")
         )
     except Exception:
         return False
@@ -65,40 +65,50 @@ class GGMLExpertForward:
 
         self._has_ggml: bool = _check_ggml()
 
-    def forward(self, packed: torch.Tensor, h: torch.Tensor) -> torch.Tensor:
+    def forward(self, packed: torch.Tensor, h: torch.Tensor, layer_idx: int = -1) -> torch.Tensor:
         """Forward on native quant expert data.
 
         Args:
             packed: [expert_bytes] uint8 tensor — raw GGUF quant bytes.
             h: [batch, hidden] BF16 tensor.
+            layer_idx: which layer (for mixed quant type lookup).
 
         Returns:
             [batch, hidden] BF16 tensor.
         """
-        if h.shape[0] == 1 and self._has_ggml:
-            return self._ggml_forward(packed, h)
-        return self._fallback_forward(packed, h)
+        # Mixed quant: get per-layer types if available
+        ggml_types = self._ggml_types
+        if layer_idx >= 0 and hasattr(self, '_layer_ggml_types') and layer_idx in self._layer_ggml_types:
+            ggml_types = self._layer_ggml_types[layer_idx]
 
-    def _ggml_forward(self, packed: torch.Tensor, h: torch.Tensor) -> torch.Tensor:
+        if h.shape[0] == 1 and self._has_ggml:
+            return self._ggml_forward(packed, h, ggml_types)
+        return self._fallback_forward(packed, h, ggml_types)
+
+    def _ggml_forward(self, packed: torch.Tensor, h: torch.Tensor,
+                       ggml_types: dict[str, int] | None = None) -> torch.Tensor:
+        if ggml_types is None:
+            ggml_types = self._ggml_types
         gate_data = packed[self._gate_off : self._gate_end]
         up_data = packed[self._up_off : self._up_end]
         down_data = packed[self._down_off : self._down_end]
 
-        op = torch.ops.tinyserve_ggml_ops.ggml_mul_mat_vec
+        op = torch.ops.tinyserve_ggml.ggml_mul_mat_vec
 
         # proj_shapes are GGML convention: (ne[0]=in_features, ne[1]=out_features)
         # ggml kernel args: (activation, weight, type, out_features, in_features)
-        gate_out = op(h, gate_data, self._ggml_types["gate"],
+        gate_out = op(h, gate_data, ggml_types["gate"],
                       self._proj_shapes["gate"][1], self._proj_shapes["gate"][0])
-        up_out = op(h, up_data, self._ggml_types["up"],
+        up_out = op(h, up_data, ggml_types["up"],
                     self._proj_shapes["up"][1], self._proj_shapes["up"][0])
 
         hidden = self._act_fn(gate_out) * up_out
 
-        return op(hidden, down_data, self._ggml_types["down"],
+        return op(hidden, down_data, ggml_types["down"],
                   self._proj_shapes["down"][1], self._proj_shapes["down"][0])
 
-    def _fallback_forward(self, packed: torch.Tensor, h: torch.Tensor) -> torch.Tensor:
+    def _fallback_forward(self, packed: torch.Tensor, h: torch.Tensor,
+                          ggml_types: dict[str, int] | None = None) -> torch.Tensor:
         from .gguf_dequant_torch import dequant_tensor
 
         gate_bytes = packed[self._gate_off : self._gate_end]
@@ -107,10 +117,12 @@ class GGMLExpertForward:
 
         # GGML shape (ne[0], ne[1]) = (in_feat, out_feat). Dequant needs (ne[1], ne[0]) = (out, in)
         # because the raw data is laid out as ne[1] rows of ne[0] elements.
+        if ggml_types is None:
+            ggml_types = self._ggml_types
         gs, us, ds = self._proj_shapes["gate"], self._proj_shapes["up"], self._proj_shapes["down"]
-        gate_w = dequant_tensor(gate_bytes.cpu(), self._ggml_types["gate"], (gs[1], gs[0]))
-        up_w = dequant_tensor(up_bytes.cpu(), self._ggml_types["up"], (us[1], us[0]))
-        down_w = dequant_tensor(down_bytes.cpu(), self._ggml_types["down"], (ds[1], ds[0]))
+        gate_w = dequant_tensor(gate_bytes.cpu(), ggml_types["gate"], (gs[1], gs[0]))
+        up_w = dequant_tensor(up_bytes.cpu(), ggml_types["up"], (us[1], us[0]))
+        down_w = dequant_tensor(down_bytes.cpu(), ggml_types["down"], (ds[1], ds[0]))
 
         # Dequant now gives (out_features, in_features) — F.linear expects this directly
         gate_w = gate_w.to(device=h.device, dtype=h.dtype)

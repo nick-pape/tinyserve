@@ -108,21 +108,25 @@ class MmapExpertStore:
         return False
 
     def _read_expert(self, layer_idx: int, expert_idx: int) -> bytes:
-        """Read raw bytes for one expert (gate+up+down concatenated)."""
+        """Read raw bytes for one expert (gate+up+down concatenated), padded to expert_bytes."""
         projs = self._groups[(layer_idx, expert_idx)]
         reader = self._reader
         parts = []
         for proj in ("gate", "up", "down"):
             info = projs[proj]
+            # Read actual bytes
             if hasattr(reader, 'tensor_names'):
-                # MultiShardGGUFReader: name-based lookup if name exists, else offset
                 if info.name in reader.tensor_names:
-                    parts.append(reader.get_tensor_data(info.name))
+                    raw = reader.get_tensor_data(info.name)
                 else:
-                    parts.append(reader.get_tensor_data_by_offset(info.offset, info.nbytes))
+                    raw = reader.get_tensor_data_by_offset(info.offset, info.nbytes)
             else:
-                # Single-file GGUFReader: direct info-based read
-                parts.append(reader.get_tensor_data(info))
+                raw = reader.get_tensor_data(info)
+            # Pad to layout size (mixed quant: some layers have smaller projections)
+            expected = self.layout.sizes[proj]
+            if len(raw) < expected:
+                raw = raw + b"\x00" * (expected - len(raw))
+            parts.append(raw)
         return b"".join(parts)
 
     def get_expert_data(self, layer_idx: int, expert_idx: int) -> torch.Tensor:
@@ -186,9 +190,12 @@ class MmapExpertStore:
             _, bpb, bs = GGML_TYPES[info.ggml_type]
             return (elements // bs) * bpb
 
-        gate_nbytes = _expert_bytes(first["gate"])
-        up_nbytes = _expert_bytes(first["up"])
-        down_nbytes = _expert_bytes(first["down"])
+        # Mixed quantization (e.g., Q4_K_M) means different layers can have
+        # different quant types for the same projection. Use max across all layers
+        # so cache slots and buffers fit the largest expert.
+        gate_nbytes = max(_expert_bytes(fused[l]["gate"]) for l in layers)
+        up_nbytes = max(_expert_bytes(fused[l]["up"]) for l in layers)
+        down_nbytes = max(_expert_bytes(fused[l]["down"]) for l in layers)
 
         # Build synthetic per-expert groups by computing byte offsets
         # within each fused tensor. Expert i starts at tensor_offset + i * expert_proj_bytes.
@@ -218,11 +225,24 @@ class MmapExpertStore:
         store.num_layers = len(layers)
         store.num_experts = n_experts
 
+        # Default ggml_types from first layer. For mixed quant (_M suffix),
+        # actual types vary per layer — stored in _layer_ggml_types.
         store.ggml_types = {
             "gate": first["gate"].ggml_type,
             "up": first["up"].ggml_type,
             "down": first["down"].ggml_type,
         }
+        store._layer_ggml_types = {}
+        store._layer_proj_nbytes = {}
+        for layer_idx in layers:
+            layer_types = {}
+            layer_nbytes = {}
+            for proj in ("gate", "up", "down"):
+                layer_types[proj] = fused[layer_idx][proj].ggml_type
+                layer_nbytes[proj] = _expert_bytes(fused[layer_idx][proj])
+            if layer_types != store.ggml_types:
+                store._layer_ggml_types[layer_idx] = layer_types
+            store._layer_proj_nbytes[layer_idx] = layer_nbytes
         store.proj_shapes = {
             "gate": (first["gate"].shape[0], first["gate"].shape[1]),
             "up": (first["up"].shape[0], first["up"].shape[1]),

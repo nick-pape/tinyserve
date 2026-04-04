@@ -101,6 +101,9 @@ class ExpertPipeline:
                 self._act_fn,
                 getattr(store, "proj_shapes", {}),
             )
+            # Mixed quant: per-layer type overrides
+            if hasattr(store, "_layer_ggml_types"):
+                self._nq_forward._layer_ggml_types = store._layer_ggml_types
             self._param_refs = None
             self._inline_fwd = None
             self._cpp_layout_args = None
@@ -265,7 +268,7 @@ class ExpertPipeline:
 
                 if slot is not None:
                     packed = cache.get_packed(slot)
-                    out = self._nq_forward.forward(packed, h)
+                    out = self._nq_forward.forward(packed, h, layer_idx=layer_idx)
                 else:
                     buf = self.staging_buffer_a
                     self.store.copy_to_buffer(buf, layer_idx, eid, non_blocking=False)
