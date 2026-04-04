@@ -1,0 +1,35 @@
+=== tinyserve-only decode profile (40 tok, warm cache) ===
+
+         905128 function calls (884288 primitive calls) in 2.164 seconds
+
+   Ordered by: internal time
+   List reduced from 232 to 19 due to restriction <'tinyserve'>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+     3840    0.200    0.000    0.757    0.000 /home/elnur/gpt-oss-offload/tinyserve/expert_forward.py:231(_forward)
+      960    0.108    0.000    0.878    0.001 /home/elnur/gpt-oss-offload/tinyserve/expert_pipeline.py:277(_forward_cache_hits)
+     7680    0.041    0.000    0.401    0.000 /home/elnur/gpt-oss-offload/tinyserve/triton_dot_scaled.py:68(dot_scaled_vecmat)
+      960    0.035    0.000    0.063    0.000 /home/elnur/gpt-oss-offload/tinyserve/expert_cache.py:125(lookup_slots)
+      960    0.021    0.000    1.353    0.001 /home/elnur/gpt-oss-offload/tinyserve/_model_hooks.py:485(offloaded_forward)
+      960    0.017    0.000    0.128    0.000 /home/elnur/gpt-oss-offload/tinyserve/expert_pipeline.py:208(_classify_hits_misses)
+     2640    0.013    0.000    0.196    0.000 /home/elnur/gpt-oss-offload/tinyserve/expert_pipeline.py:558(schedule_prefetch)
+     7680    0.012    0.000    0.413    0.000 /home/elnur/gpt-oss-offload/tinyserve/_model_hooks.py:104(_mxfp4_linear)
+      960    0.011    0.000    1.045    0.001 /home/elnur/gpt-oss-offload/tinyserve/expert_pipeline.py:113(execute_layer_experts)
+     3840    0.008    0.000    0.008    0.000 /home/elnur/gpt-oss-offload/tinyserve/expert_cache.py:155(get_packed)
+      960    0.006    0.000    1.013    0.001 /home/elnur/gpt-oss-offload/tinyserve/expert_pipeline.py:428(_execute_token_experts)
+      960    0.004    0.000    0.072    0.000 /home/elnur/gpt-oss-offload/tinyserve/_model_hooks.py:408(route)
+      960    0.004    0.000    0.039    0.000 /home/elnur/gpt-oss-offload/tinyserve/offload.py:216(sdpa_attention_with_sinks)
+    10560    0.004    0.000    0.007    0.000 /home/elnur/gpt-oss-offload/tinyserve/expert_cache.py:70(contains)
+     3840    0.003    0.000    0.003    0.000 /home/elnur/gpt-oss-offload/tinyserve/cache_policy.py:209(lookup)
+    10560    0.003    0.000    0.003    0.000 /home/elnur/gpt-oss-offload/tinyserve/cache_policy.py:245(contains)
+     5280    0.001    0.000    0.001    0.000 /home/elnur/gpt-oss-offload/tinyserve/_model_hooks.py:477(_maybe_phase)
+      960    0.000    0.000    0.000    0.000 /home/elnur/gpt-oss-offload/tinyserve/expert_cache.py:118(flush_slot_updates)
+       40    0.000    0.000    0.000    0.000 /home/elnur/gpt-oss-offload/tinyserve/expert_cache.py:74(begin_pass)
+
+
+
+
+=== CUMULATIVE ===
+
+
+Wall: 24.4 tok/s (40.9 ms/tok)
