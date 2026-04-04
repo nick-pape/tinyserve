@@ -3,6 +3,7 @@
 import torch
 import pytest
 from tinyserve.static_kv_cache import StaticKVCache
+from tests.conftest import requires_cuda
 
 
 def test_basic_update_and_read():
@@ -540,3 +541,33 @@ def test_streaming_no_eviction_when_below_capacity():
     # No eviction: seq_len == 50, returned shape == 50
     assert cache.get_seq_length(0) == 50
     assert k_out.shape == (1, 2, 50, 4)
+
+
+@requires_cuda
+def test_streaming_eviction_handles_seq_len_smaller_than_window():
+    """Eviction when seq_len < window_size should keep all tokens, not wrap."""
+    cache = StaticKVCache(
+        max_seq_len=64, num_layers=1, num_kv_heads=1,
+        head_dim=4, device=torch.device("cuda"),
+    )
+    cache.enable_streaming(sink_size=4, window_size=1024)
+    k = torch.randn(1, 1, 32, 4, device="cuda", dtype=torch.bfloat16)
+    v = torch.randn(1, 1, 32, 4, device="cuda", dtype=torch.bfloat16)
+    cache.update(k, v, layer_idx=0)
+    cache._evict_streaming(0)
+    assert cache.get_seq_length(0) == 32
+
+
+@requires_cuda
+def test_streaming_eviction_at_exact_capacity():
+    """When seq_len == sink_size + window_size, no eviction needed."""
+    cache = StaticKVCache(
+        max_seq_len=128, num_layers=1, num_kv_heads=1,
+        head_dim=4, device=torch.device("cuda"),
+    )
+    cache.enable_streaming(sink_size=4, window_size=60)
+    k = torch.randn(1, 1, 64, 4, device="cuda", dtype=torch.bfloat16)
+    v = torch.randn(1, 1, 64, 4, device="cuda", dtype=torch.bfloat16)
+    cache.update(k, v, layer_idx=0)
+    cache._evict_streaming(0)
+    assert cache.get_seq_length(0) == 64

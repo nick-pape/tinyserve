@@ -294,7 +294,7 @@ class StaticKVCache:
         # Copy sink tokens (first N) and window tokens (last M)
         # into positions 0..max_kept
         sink_end = self._sink_size
-        window_start = seq_len - self._window_size
+        window_start = max(self._sink_size, seq_len - self._window_size)
 
         # Sinks are already at positions 0..sink_end — no copy needed
         # Window needs to shift from window_start to sink_end
