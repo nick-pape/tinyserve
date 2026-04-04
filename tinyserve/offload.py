@@ -530,6 +530,21 @@ def offload_model(
                     module.register_buffer(name, torch.empty(0, device=device, dtype=buf.dtype))
                 elif buf.device != torch.device(device):
                     module.register_buffer(name, buf.to(device))
+        # Offload embedding to CPU to free ~1.5 GB VRAM for expert cache.
+        # Embedding lookup is an index op — fast on CPU, result copied to GPU.
+        inner = model.model if hasattr(model, "model") else model
+        if hasattr(inner, "embed_tokens") and inner.embed_tokens.weight.device.type == "cuda":
+            embed_vram = inner.embed_tokens.weight.numel() * inner.embed_tokens.weight.element_size()
+            inner.embed_tokens.weight = torch.nn.Parameter(
+                inner.embed_tokens.weight.data.cpu(), requires_grad=False)
+            _orig_embed_forward = inner.embed_tokens.forward
+            _embed_device = torch.device(device)
+            def _cpu_embed_forward(input_ids):
+                return _orig_embed_forward(input_ids.cpu()).to(_embed_device)
+            inner.embed_tokens.forward = _cpu_embed_forward
+            torch.cuda.empty_cache()
+            logger.info("Offloaded embed_tokens to CPU (%.1f MB freed)", embed_vram / 1e6)
+
     else:
         model = model.to(device).to(torch.bfloat16)
 
