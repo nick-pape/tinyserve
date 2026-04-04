@@ -1,0 +1,35 @@
+         1170702 function calls (1034806 primitive calls) in 3.368 seconds
+
+   Ordered by: internal time
+   List reduced from 467 to 25 due to restriction <25>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+       24    0.622    0.026    0.896    0.037 /home/elnur/gpt-oss-offload/tinyserve/expert_pipeline.py:130(execute_layer_experts_batched)
+     1226    0.397    0.000    0.397    0.000 {method 'copy_' of 'torch._C.TensorBase' objects}
+     3815    0.196    0.000    0.798    0.000 /home/elnur/gpt-oss-offload/tinyserve/expert_forward.py:231(_forward)
+     5050    0.160    0.000    0.160    0.000 {built-in method torch._C._nn.linear}
+       41    0.112    0.003    0.112    0.003 /home/elnur/.local/lib/python3.12/site-packages/transformers/generation/utils.py:2555(_has_unfinished_sequences)
+      936    0.102    0.000    0.838    0.001 /home/elnur/gpt-oss-offload/tinyserve/expert_pipeline.py:267(_forward_cache_hits)
+     7654    0.087    0.000    0.284    0.000 /home/elnur/.local/lib/python3.12/site-packages/triton/runtime/jit.py:695(run)
+     1920    0.084    0.000    0.116    0.000 /home/elnur/.local/lib/python3.12/site-packages/transformers/models/gpt_oss/modeling_gpt_oss.py:226(_apply_rotary_emb)
+     4470    0.083    0.000    0.083    0.000 {method 'tolist' of 'torch._C.TensorBase' objects}
+     8800    0.083    0.000    0.083    0.000 {method 'clamp' of 'torch._C.TensorBase' objects}
+     1960    0.066    0.000    0.174    0.000 /home/elnur/.local/lib/python3.12/site-packages/transformers/models/gpt_oss/modeling_gpt_oss.py:57(forward)
+     6979    0.058    0.000    0.058    0.000 {method 'to' of 'torch._C.TensorBase' objects}
+    36974    0.058    0.000    0.058    0.000 {method 'view' of 'torch._C.TensorBase' objects}
+     7654    0.043    0.000    0.414    0.000 /home/elnur/gpt-oss-offload/tinyserve/triton_dot_scaled.py:68(dot_scaled_vecmat)
+135424/21616    0.041    0.000    0.047    0.000 /home/elnur/.local/lib/python3.12/site-packages/torch/nn/modules/module.py:2829(named_modules)
+      960    0.039    0.000    0.039    0.000 {built-in method torch._C._nn.scaled_dot_product_attention}
+     3960    0.038    0.000    0.038    0.000 {built-in method torch.cat}
+      936    0.036    0.000    0.096    0.000 /home/elnur/gpt-oss-offload/tinyserve/expert_cache.py:123(lookup_slots)
+     1079    0.035    0.000    0.035    0.000 {built-in method torch.tensor}
+  9957/40    0.032    0.000    3.210    0.080 /home/elnur/.local/lib/python3.12/site-packages/torch/nn/modules/module.py:1780(_call_impl)
+      210    0.031    0.000    0.044    0.000 /home/elnur/gpt-oss-offload/tinyserve/mxfp4.py:20(dequant_mxfp4_no_transpose)
+     3932    0.027    0.000    0.027    0.000 {built-in method torch.sigmoid}
+      960    0.027    0.000    0.406    0.000 /home/elnur/.local/lib/python3.12/site-packages/transformers/models/gpt_oss/modeling_gpt_oss.py:305(forward)
+     7864    0.026    0.000    0.026    0.000 {built-in method torch.empty}
+      960    0.026    0.000    3.132    0.003 /home/elnur/.local/lib/python3.12/site-packages/transformers/models/gpt_oss/modeling_gpt_oss.py:357(forward)
+
+
+
+Wall: 40 tok in 3088ms = 77.2ms/tok = 13.0 tok/s
