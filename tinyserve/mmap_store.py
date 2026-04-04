@@ -25,7 +25,7 @@ from .expert_cache import ExpertCache
 from .expert_store import ExpertBuffer, TensorLayout
 from .gguf_dequant import _dequant_fused_tensor
 from .gguf_loader import open_gguf
-from .gguf_reader import GGUFTensorInfo
+from .gguf_reader import GGML_TYPES, GGUFTensorInfo
 
 
 class MmapExpertStore:
@@ -110,10 +110,16 @@ class MmapExpertStore:
     def _read_expert(self, layer_idx: int, expert_idx: int) -> bytes:
         """Read raw bytes for one expert (gate+up+down concatenated)."""
         projs = self._groups[(layer_idx, expert_idx)]
-        gate_bytes = self._reader.get_tensor_data(projs["gate"])
-        up_bytes = self._reader.get_tensor_data(projs["up"])
-        down_bytes = self._reader.get_tensor_data(projs["down"])
-        return gate_bytes + up_bytes + down_bytes
+        parts = []
+        for proj in ("gate", "up", "down"):
+            info = projs[proj]
+            # Try name-based lookup first (per-expert GGUF)
+            try:
+                parts.append(self._reader.get_tensor_data(info.name))
+            except (KeyError, TypeError):
+                # Synthetic TensorInfo from from_fused — read by offset
+                parts.append(self._reader.get_tensor_data_by_offset(info.offset, info.nbytes))
+        return b"".join(parts)
 
     def get_expert_data(self, layer_idx: int, expert_idx: int) -> torch.Tensor:
         """Return packed expert data as a CPU uint8 tensor."""
@@ -148,6 +154,100 @@ class MmapExpertStore:
             torch.frombuffer(bytearray(raw), dtype=torch.uint8)
         )
         cache._packed[slot].copy_(self._pinned_staging)
+
+    @classmethod
+    def from_fused(cls, path: str | Path) -> MmapExpertStore:
+        """Create MmapExpertStore from fused GGUF (Qwen-style).
+
+        Fused tensors have shape (out_dim, in_dim, n_experts). In ggml's layout,
+        the expert dimension is outermost — each expert is a contiguous byte range.
+        No conversion or dequantization needed.
+
+        Expert i's data starts at: tensor_offset + i * bytes_per_expert
+        where bytes_per_expert = (out_dim * in_dim // block_size) * bytes_per_block.
+        """
+        reader = open_gguf(path)
+        fused = reader.list_fused_expert_tensors()
+        if not fused:
+            reader.close()
+            raise ValueError(f"No fused expert tensors in {path}")
+
+        layers = sorted(fused.keys())
+        first = fused[layers[0]]
+        n_experts = first["gate"].shape[2]
+
+        # Per-expert byte sizes from fused tensor dimensions
+        def _expert_bytes(info: GGUFTensorInfo) -> int:
+            elements = info.shape[0] * info.shape[1]
+            _, bpb, bs = GGML_TYPES[info.ggml_type]
+            return (elements // bs) * bpb
+
+        gate_nbytes = _expert_bytes(first["gate"])
+        up_nbytes = _expert_bytes(first["up"])
+        down_nbytes = _expert_bytes(first["down"])
+
+        # Build synthetic per-expert groups by computing byte offsets
+        # within each fused tensor. Expert i starts at tensor_offset + i * expert_proj_bytes.
+        groups: dict[tuple[int, int], dict[str, GGUFTensorInfo]] = {}
+        for layer_idx in layers:
+            layer_fused = fused[layer_idx]
+            for expert_idx in range(n_experts):
+                expert_projs = {}
+                for proj in ("gate", "up", "down"):
+                    fused_info = layer_fused[proj]
+                    proj_expert_bytes = _expert_bytes(fused_info)
+                    # Create a synthetic TensorInfo pointing to this expert's slice
+                    expert_projs[proj] = GGUFTensorInfo(
+                        name=f"blk.{layer_idx}.ffn_{proj}.{expert_idx}.weight",
+                        shape=(fused_info.shape[0], fused_info.shape[1]),
+                        ggml_type=fused_info.ggml_type,
+                        ggml_type_name=fused_info.ggml_type_name,
+                        offset=fused_info.offset + expert_idx * proj_expert_bytes,
+                        nbytes=proj_expert_bytes,
+                        block_size=fused_info.block_size,
+                    )
+                groups[(layer_idx, expert_idx)] = expert_projs
+
+        # Build the store using the synthetic per-expert groups
+        store = cls.__new__(cls)
+        store._reader = reader
+        store.num_layers = len(layers)
+        store.num_experts = n_experts
+
+        store.ggml_types = {
+            "gate": first["gate"].ggml_type,
+            "up": first["up"].ggml_type,
+            "down": first["down"].ggml_type,
+        }
+        store.proj_shapes = {
+            "gate": (first["gate"].shape[0], first["gate"].shape[1]),
+            "up": (first["up"].shape[0], first["up"].shape[1]),
+            "down": (first["down"].shape[0], first["down"].shape[1]),
+        }
+
+        specs = {
+            "gate": ((gate_nbytes,), torch.uint8),
+            "up": ((up_nbytes,), torch.uint8),
+            "down": ((down_nbytes,), torch.uint8),
+        }
+        store.layout = TensorLayout(specs)
+        store._bf16_layout = store.layout
+        store.expert_bytes = store.layout.total_bytes
+        store.buffer_expert_bytes = store.expert_bytes
+
+        store._groups = groups
+        store._layer_map = {layer: i for i, layer in enumerate(layers)}
+        store._expert_map = {expert: i for i, expert in enumerate(range(n_experts))}
+        store._pinned_staging = torch.empty(store.expert_bytes, dtype=torch.uint8).pin_memory()
+
+        logger.info(
+            "MmapExpertStore (fused, zero-copy): %d layers, %d experts, "
+            "%.1f MB/expert (%s gate, %s down)",
+            store.num_layers, store.num_experts,
+            store.expert_bytes / 1e6,
+            first["gate"].ggml_type_name, first["down"].ggml_type_name,
+        )
+        return store
 
     def close(self) -> None:
         self._reader.close()

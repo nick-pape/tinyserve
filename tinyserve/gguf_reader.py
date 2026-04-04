@@ -165,6 +165,11 @@ class GGUFReader:
         self._file.seek(self._data_offset + info.offset)
         return self._file.read(info.nbytes)
 
+    def get_tensor_data_by_offset(self, offset: int, nbytes: int) -> bytes:
+        """Read raw bytes at an absolute data offset (for slicing fused tensors)."""
+        self._file.seek(self._data_offset + offset)
+        return self._file.read(nbytes)
+
     def list_expert_tensors(self) -> dict[tuple[int, int], dict[str, GGUFTensorInfo]]:
         """Group per-expert tensors by (layer, expert_idx).
 

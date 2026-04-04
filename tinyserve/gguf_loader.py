@@ -279,6 +279,26 @@ class MultiShardGGUFReader:
         reader = self._readers[entry.shard_idx]
         return reader.get_tensor_data(entry.info)
 
+    def get_tensor_data_by_offset(self, offset: int, nbytes: int, shard_idx: int = -1) -> bytes:
+        """Read raw bytes from a specific offset (for slicing fused tensors).
+
+        If shard_idx is -1, searches all shards for one whose data range covers the offset.
+        """
+        if shard_idx >= 0:
+            reader = self._readers[shard_idx]
+            reader._file.seek(reader._data_offset + offset)
+            return reader._file.read(nbytes)
+        # Search: find which shard contains this offset
+        for reader in self._readers:
+            try:
+                reader._file.seek(reader._data_offset + offset)
+                data = reader._file.read(nbytes)
+                if len(data) == nbytes:
+                    return data
+            except (OSError, ValueError):
+                continue
+        raise ValueError(f"Offset {offset} not found in any shard")
+
     def list_expert_tensors(self) -> dict[tuple[int, int], dict[str, GGUFTensorInfo]]:
         """Group per-expert tensors by (layer, expert_idx) across all shards.
 
@@ -525,19 +545,13 @@ def load_from_gguf(
     logger.info("Loaded %d non-expert weights, skipped %d", loaded, skipped)
 
     # Step 5: Expert weights -> MmapExpertStore (zero-copy, native quant)
-    from .mmap_store import MmapExpertStore, from_fused_gguf
+    from .mmap_store import MmapExpertStore
 
     if fused_expert_names:
         # Fused format (Qwen-style): blk.<L>.ffn_{gate,up,down}_exps.weight
-        # Convert to per-expert .experts file on first call, then mmap it.
+        # Zero-copy: expert dim is outermost in ggml, each expert is contiguous bytes.
         reader.close()
-        expert_store = from_fused_gguf(gguf_path)
-        logger.info(
-            "Expert store (fused mmap): %d layers, %d experts, %.2f MB/expert",
-            expert_store.num_layers,
-            expert_store.num_experts,
-            expert_store.expert_bytes / 1e6,
-        )
+        expert_store = MmapExpertStore.from_fused(gguf_path)
     elif expert_names:
         # Per-expert format: blk.<L>.ffn_{gate,up,down}.<E>.weight
         reader.close()
