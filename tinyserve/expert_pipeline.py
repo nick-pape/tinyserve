@@ -368,7 +368,7 @@ class ExpertPipeline:
             if _cython_classify_hits is not None:
                 hits, misses = _cython_classify_hits(expert_ids_list, slots_list)
                 for i, slot in hits:
-                    cache._policy.lookup((layer_idx, expert_ids_list[i]))
+                    cache._policy.locate((layer_idx, expert_ids_list[i]))
                     cache.hits += 1
                     cache._layer_hits[layer_idx] = cache._layer_hits.get(layer_idx, 0) + 1
                     cache._expert_access_count[(layer_idx, expert_ids_list[i])] = (
@@ -384,7 +384,7 @@ class ExpertPipeline:
                 for i, (eid, slot) in enumerate(zip(expert_ids_list, slots_list)):
                     if slot >= 0:
                         hits.append((i, slot))
-                        cache._policy.lookup((layer_idx, eid))
+                        cache._policy.locate((layer_idx, eid))
                         cache.hits += 1
                         cache._layer_hits[layer_idx] = cache._layer_hits.get(layer_idx, 0) + 1
                         cache._expert_access_count[(layer_idx, eid)] = (

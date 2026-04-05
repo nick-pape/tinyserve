@@ -19,13 +19,13 @@ from collections import OrderedDict, deque
 logger = logging.getLogger(__name__)
 
 
-class CachePolicy(ABC):
+class EvictionPolicy(ABC):
     @abstractmethod
-    def lookup(self, key: tuple) -> int | None:
+    def locate(self, key: tuple) -> int | None:
         """Return slot if key is cached (update recency), else None."""
 
     @abstractmethod
-    def insert(self, key: tuple, slot: int) -> None:
+    def register(self, key: tuple, slot: int) -> None:
         """Register key→slot after a miss is resolved."""
 
     @abstractmethod
@@ -44,17 +44,17 @@ class CachePolicy(ABC):
     def __len__(self) -> int: ...
 
 
-class LRUPolicy(CachePolicy):
+class LRUPolicy(EvictionPolicy):
     def __init__(self) -> None:
         self._od: OrderedDict[tuple, int] = OrderedDict()
 
-    def lookup(self, key: tuple) -> int | None:
+    def locate(self, key: tuple) -> int | None:
         if key not in self._od:
             return None
         self._od.move_to_end(key)
         return self._od[key]
 
-    def insert(self, key: tuple, slot: int) -> None:
+    def register(self, key: tuple, slot: int) -> None:
         self._od[key] = slot
         self._od.move_to_end(key)
 
@@ -72,14 +72,14 @@ class LRUPolicy(CachePolicy):
         return len(self._od)
 
 
-class SLRUPolicy(CachePolicy):
+class SLRUPolicy(EvictionPolicy):
     def __init__(self, capacity: int) -> None:
         self._n_protected = max(1, int(capacity * 0.8))
         self._n_probationary = capacity - self._n_protected
         self._protected: OrderedDict[tuple, int] = OrderedDict()
         self._probationary: OrderedDict[tuple, int] = OrderedDict()
 
-    def lookup(self, key: tuple) -> int | None:
+    def locate(self, key: tuple) -> int | None:
         if key in self._protected:
             self._protected.move_to_end(key)
             return self._protected[key]
@@ -95,7 +95,7 @@ class SLRUPolicy(CachePolicy):
             return slot
         return None
 
-    def insert(self, key: tuple, slot: int) -> None:
+    def register(self, key: tuple, slot: int) -> None:
         self._probationary[key] = slot
         self._probationary.move_to_end(key)
 
@@ -120,12 +120,12 @@ class SLRUPolicy(CachePolicy):
         return len(self._protected) + len(self._probationary)
 
 
-class LFUPolicy(CachePolicy):
+class LFUPolicy(EvictionPolicy):
     def __init__(self) -> None:
         self._data: dict[tuple, tuple[int, int]] = {}
         self._heap: list[tuple[int, tuple]] = []
 
-    def lookup(self, key: tuple) -> int | None:
+    def locate(self, key: tuple) -> int | None:
         if key not in self._data:
             return None
         slot, count = self._data[key]
@@ -134,7 +134,7 @@ class LFUPolicy(CachePolicy):
         heapq.heappush(self._heap, (new_count, key))
         return slot
 
-    def insert(self, key: tuple, slot: int) -> None:
+    def register(self, key: tuple, slot: int) -> None:
         self._data[key] = (slot, 1)
         heapq.heappush(self._heap, (1, key))
 
@@ -160,15 +160,15 @@ class LFUPolicy(CachePolicy):
         return len(self._data)
 
 
-class FIFOPolicy(CachePolicy):
+class FIFOPolicy(EvictionPolicy):
     def __init__(self) -> None:
         self._order: deque[tuple] = deque()
         self._slots: dict[tuple, int] = {}
 
-    def lookup(self, key: tuple) -> int | None:
+    def locate(self, key: tuple) -> int | None:
         return self._slots.get(key)
 
-    def insert(self, key: tuple, slot: int) -> None:
+    def register(self, key: tuple, slot: int) -> None:
         self._slots[key] = slot
         self._order.append(key)
 
@@ -193,7 +193,7 @@ class FIFOPolicy(CachePolicy):
         return len(self._slots)
 
 
-class LFRUPolicy(CachePolicy):
+class LFRUPolicy(EvictionPolicy):
     """Frequency-Recency hybrid: evict the entry with the lowest freq/age ratio.
 
     Score = freq / age  (higher = more valuable to keep).
@@ -206,7 +206,7 @@ class LFRUPolicy(CachePolicy):
         self._data: dict[tuple, list] = {}  # key -> [slot, freq, clock]
         self._clock = 0
 
-    def lookup(self, key: tuple) -> int | None:
+    def locate(self, key: tuple) -> int | None:
         if key not in self._data:
             return None
         entry = self._data[key]
@@ -215,7 +215,7 @@ class LFRUPolicy(CachePolicy):
         entry[2] = self._clock  # last access
         return entry[0]
 
-    def insert(self, key: tuple, slot: int) -> None:
+    def register(self, key: tuple, slot: int) -> None:
         self._clock += 1
         self._data[key] = [slot, 1, self._clock]
 
@@ -250,7 +250,7 @@ class LFRUPolicy(CachePolicy):
         return len(self._data)
 
 
-class LeastStalePolicy(CachePolicy):
+class LeastStalePolicy(EvictionPolicy):
     """Least-Stale eviction: stale experts (accessed in a previous forward pass
     but not the current one) are evicted before fresh ones.
 
@@ -283,7 +283,7 @@ class LeastStalePolicy(CachePolicy):
             self._stale[key] = slot
         self._fresh.clear()
 
-    def lookup(self, key: tuple) -> int | None:
+    def locate(self, key: tuple) -> int | None:
         if key in self._fresh:
             return self._fresh[key]
         if key in self._stale:
@@ -292,7 +292,7 @@ class LeastStalePolicy(CachePolicy):
             return slot
         return None
 
-    def insert(self, key: tuple, slot: int) -> None:
+    def register(self, key: tuple, slot: int) -> None:
         self._fresh[key] = slot
 
     def select_evict(self) -> tuple[tuple, int]:
@@ -317,7 +317,7 @@ class LeastStalePolicy(CachePolicy):
         return len(self._fresh) + len(self._stale)
 
 
-class DALIPolicy(CachePolicy):
+class DALIPolicy(EvictionPolicy):
     """Workload-aware sliding-window cache (DALI, arxiv 2602.03495).
 
     Tracks per-expert activation frequency over the last ``window`` token
@@ -357,7 +357,7 @@ class DALIPolicy(CachePolicy):
         self._history.append(key)
         self._freq[key] = self._freq.get(key, 0) + 1
 
-    def lookup(self, key: tuple) -> int | None:
+    def locate(self, key: tuple) -> int | None:
         slot = self._slots.get(key)
         if slot is None:
             return None
@@ -370,7 +370,7 @@ class DALIPolicy(CachePolicy):
             self._lru.move_to_end(key)
         return slot
 
-    def insert(self, key: tuple, slot: int) -> None:
+    def register(self, key: tuple, slot: int) -> None:
         self._slots[key] = slot
         self._record_access(key)
         if not self._is_hot(key):
@@ -396,7 +396,7 @@ class DALIPolicy(CachePolicy):
         return len(self._slots)
 
 
-def make_policy(name: str, capacity: int) -> CachePolicy:
+def make_eviction_policy(name: str, capacity: int) -> EvictionPolicy:
     """Create a policy by name. name: 'lru' | 'slru' | 'lfu' | 'lfru' | 'fifo' | 'ls' | 'dali'"""
     if name == "lru":
         return LRUPolicy()
@@ -413,3 +413,8 @@ def make_policy(name: str, capacity: int) -> CachePolicy:
     if name == "dali":
         return DALIPolicy(capacity)
     raise ValueError(f"Unknown cache policy: {name!r}. Choose from 'lru', 'slru', 'lfu', 'lfru', 'fifo', 'ls', 'dali'.")
+
+
+# Backward-compat aliases — removed in Task 12
+CachePolicy = EvictionPolicy
+make_policy = make_eviction_policy

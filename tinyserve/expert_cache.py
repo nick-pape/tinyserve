@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import torch
 
-from .cache_policy import make_policy
+from .cache_policy import make_eviction_policy
 
 
 class ExpertCache:
@@ -27,7 +27,7 @@ class ExpertCache:
         self.expert_bytes = expert_bytes
         self.device = device
         self._packed = torch.empty(capacity, expert_bytes, dtype=torch.uint8, device=device)
-        self._policy = make_policy(policy, capacity)
+        self._policy = make_eviction_policy(policy, capacity)
         self._free_slots = list(range(capacity - 1, -1, -1))
         self.hits = 0
         self.misses = 0
@@ -54,7 +54,7 @@ class ExpertCache:
         self._neg_one = torch.tensor(-1, dtype=torch.int32, device=device)
 
     def lookup(self, layer_idx: int, expert_idx: int) -> int | None:
-        slot = self._policy.lookup((layer_idx, expert_idx))
+        slot = self._policy.locate((layer_idx, expert_idx))
         key = (layer_idx, expert_idx)
         self._expert_access_count[key] = self._expert_access_count.get(key, 0) + 1
         if self._step_experts is not None:
@@ -111,7 +111,7 @@ class ExpertCache:
             if self._slot_map is not None:
                 self._slot_map_cpu[evict_key[0], evict_key[1]] = -1
                 self._slot_map_dirty = True
-        self._policy.insert(key, slot)
+        self._policy.register(key, slot)
         self._ensure_slot_map(layer_idx, expert_idx)
         self._slot_map_cpu[layer_idx, expert_idx] = slot
         self._slot_map_dirty = True
