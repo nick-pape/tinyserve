@@ -108,38 +108,32 @@ def main():
         print(f"Window: {args.streaming_window}")
     print()
 
+    contexts = [int(x) for x in args.contexts.split(",")]
+    decode_budget = args.n_warmup + args.n_measure + 16  # headroom for decode steps after prefill
+    if args.streaming:
+        effective_max_seq = args.streaming_window + args.streaming_sink_size + decode_budget
+    else:
+        effective_max_seq = max(max(contexts) + decode_budget, args.max_seq_len)
+
     cfg = TinyserveConfig(
         streaming=args.streaming,
         streaming_window_size=args.streaming_window,
         streaming_sink_size=4,
+        max_seq_len=effective_max_seq,
+        fp8=True,
+        adaptive_fate=True,
     )
-
-    effective_max_seq = args.max_seq_len
-    if args.streaming:
-        # With streaming, we can handle any context
-        contexts = [int(x) for x in args.contexts.split(",")]
-        effective_max_seq = max(max(contexts) + 100, args.max_seq_len)
 
     model = load_and_offload(
         args.model,
         device="cuda",
-        fp8=True,
-        adaptive_fate=True,
-        max_seq_len=effective_max_seq if not args.streaming else args.max_seq_len,
         offload_config=cfg,
     )
     tok = AutoTokenizer.from_pretrained(args.model)
 
-    contexts = [int(x) for x in args.contexts.split(",")]
     results = []
 
     for ctx in contexts:
-        if ctx > args.max_seq_len and not args.streaming:
-            # Need streaming or larger max_seq_len
-            if ctx > effective_max_seq:
-                print(f"  {ctx:>6} tokens: SKIP (> max_seq_len)")
-                continue
-
         label = f"ctx={ctx}" if ctx > 0 else "no-ctx (decode-only)"
         if ctx == 0:
             # Pure decode benchmark (no prefill)
