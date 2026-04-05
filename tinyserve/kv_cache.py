@@ -188,7 +188,7 @@ class KVCache:
             if (
                 not healed
                 and self._vram_budget is not None
-                and self._vram_budget.handle_overflow(end - self.max_seq_len)
+                and self._vram_budget.reclaim_slots_for_kv(end - self.max_seq_len)
             ):
                 start = self._seq_lens[layer_idx]
                 end = start + new_tokens

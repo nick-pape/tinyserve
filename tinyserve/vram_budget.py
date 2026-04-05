@@ -35,31 +35,31 @@ class VRAMBudget:
         self.tokens_per_expert_slot = expert_bytes // max(1, kv_bytes_per_token)
         self._rebalance_count = 0
 
-    def handle_overflow(self, tokens_needed: int) -> bool:
+    def reclaim_slots_for_kv(self, overflow_token_count: int) -> bool:
         """Called when KV cache overflows. Frees expert slots to extend KV.
 
         Args:
-            tokens_needed: how many additional KV tokens are required.
+            overflow_token_count: how many additional KV tokens are required.
 
         Returns:
             True if KV was successfully extended, False if no expert slots
             could be freed (expert cache already at minimum).
         """
-        slots_needed = math.ceil(tokens_needed / max(1, self.tokens_per_expert_slot))
+        slots_needed = math.ceil(overflow_token_count / max(1, self.tokens_per_expert_slot))
         slots_available = self.expert_cache.capacity - self.min_expert_capacity
         slots_to_free = min(slots_needed, slots_available)
 
         if slots_to_free <= 0:
             logger.warning(
                 "KV overflow: need %d tokens but expert cache at minimum (%d slots)",
-                tokens_needed,
+                overflow_token_count,
                 self.expert_cache.capacity,
             )
             return False
 
         freed_bytes = self.expert_cache.shrink(slots_to_free)
         kv_tokens = freed_bytes // max(1, self.kv_bytes_per_token)
-        self.kv_cache.extend(max(kv_tokens, tokens_needed))
+        self.kv_cache.extend(max(kv_tokens, overflow_token_count))
         self._rebalance_count += 1
 
         logger.info(
@@ -72,6 +72,8 @@ class VRAMBudget:
             self.kv_cache.max_seq_len,
         )
         return True
+
+    handle_overflow = reclaim_slots_for_kv  # backward-compat alias — removed in Task 12
 
     def release_kv(self) -> None:
         """Called when a request completes. Grows expert cache back from freed KV space."""
