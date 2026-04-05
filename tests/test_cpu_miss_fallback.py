@@ -24,7 +24,7 @@ class TinyExpert(nn.Module):
 
 
 def _make_pipeline_with_cpu(num_experts=4, hidden=16, intermediate=32):
-    from tinyserve.cpu_expert import CPUExpertForward
+    from tinyserve.cpu_compute import CPUExpertForward
     from tinyserve.expert_pipeline import ExpertPipeline
     from tinyserve.expert_store import ExpertCache, ExpertStore
 

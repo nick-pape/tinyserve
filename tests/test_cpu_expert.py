@@ -5,7 +5,7 @@ import torch
 import torch.nn.functional as F
 
 from tests.conftest import requires_cuda
-from tinyserve.cpu_expert import CPUExpertForward
+from tinyserve.cpu_compute import CPUExpertForward
 from tinyserve.expert_store import TensorLayout, _pack_tensors
 
 HIDDEN = 64
@@ -81,7 +81,7 @@ class TestInit:
         assert fwd._variant == "separate"
 
     def test_mxfp4_accepted_when_int4_available(self):
-        from tinyserve.cpu_expert import HAS_INT4_CPU
+        from tinyserve.cpu_compute import HAS_INT4_CPU
 
         specs = {
             "gate_up_proj": ((256, 4, 16), torch.uint8),

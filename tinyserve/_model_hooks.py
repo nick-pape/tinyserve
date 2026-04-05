@@ -14,7 +14,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .expert_forward import _QUICK_GELU_COEFF
+from .expert_compute import _QUICK_GELU_COEFF
 from .expert_pipeline import ExpertPipeline
 from .expert_store import ExpertStore, _is_qtensor
 from .mxfp4 import dequant_mxfp4_no_transpose
@@ -212,7 +212,7 @@ class OffloadedModel(nn.Module):
                     ram_cache_gb=ram_cache_gb,
                 )
                 # Create CPUExpertForward from the store layout.
-                from .cpu_expert import CPUExpertForward
+                from .cpu_compute import CPUExpertForward
 
                 try:
                     cpu_expert = CPUExpertForward(store.layout)

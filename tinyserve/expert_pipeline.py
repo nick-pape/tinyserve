@@ -14,7 +14,7 @@ import torch
 import torch.nn as nn
 
 from .expert_cache import ExpertCache
-from .expert_forward import (
+from .expert_compute import (
     _build_cpp_layout_args,
     _build_gpu_int4_forward,
     _build_inline_forward,
@@ -92,7 +92,7 @@ class ExpertPipeline:
         # Native quant detection: MmapExpertStore / FusedMmapExpertStore have ggml_types
         self._native_quant = hasattr(store, "ggml_types")
         if self._native_quant:
-            from .ggml_forward import GGMLExpertForward
+            from .ggml_compute import GGMLExpertForward
 
             self._act_fn = nn.SiLU()
             self._nq_forward = GGMLExpertForward(

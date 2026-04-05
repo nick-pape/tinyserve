@@ -7,7 +7,7 @@ import pytest
 import torch
 import torch.nn.functional as F
 
-from tinyserve.cpu_expert import HAS_INT4_CPU
+from tinyserve.cpu_compute import HAS_INT4_CPU
 from tinyserve.gguf_reader import GGML_TYPES
 
 requires_int4 = pytest.mark.skipif(not HAS_INT4_CPU, reason="INT4 CPU ops not available")

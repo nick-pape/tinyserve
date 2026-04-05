@@ -5,7 +5,7 @@ import torch
 import torch.nn.functional as F
 
 from tests.conftest import requires_cuda
-from tinyserve.cpu_expert import (
+from tinyserve.cpu_compute import (
     HAS_INT4_CPU,
     CPUExpertForward,
     CPUINT4Forward,

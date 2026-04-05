@@ -80,7 +80,7 @@ def _build_packed_q8_0(
 @requires_cuda
 def test_ggml_forward_batch_1_produces_valid_output():
     """GGMLExpertForward batch=1: 3 projections, SiLU, non-NaN output."""
-    from tinyserve.ggml_forward import GGMLExpertForward
+    from tinyserve.ggml_compute import GGMLExpertForward
 
     hidden = 64
     inter = 128
@@ -107,7 +107,7 @@ def test_ggml_forward_batch_1_produces_valid_output():
 
 def test_ggml_forward_fallback_produces_valid_output():
     """GGMLExpertForward fallback: batch=4 uses dequant+F.linear, CPU-only."""
-    from tinyserve.ggml_forward import GGMLExpertForward
+    from tinyserve.ggml_compute import GGMLExpertForward
 
     hidden = 64
     inter = 128
@@ -135,7 +135,7 @@ def test_ggml_forward_fallback_produces_valid_output():
 @requires_cuda
 def test_ggml_forward_matches_fallback():
     """ggml kernel output ≈ dequant+F.linear output within quant noise (Q8_0)."""
-    from tinyserve.ggml_forward import GGMLExpertForward
+    from tinyserve.ggml_compute import GGMLExpertForward
 
     hidden = 64
     inter = 128
@@ -173,7 +173,7 @@ def test_ggml_forward_matches_fallback():
 
 def test_ggml_forward_batch_gt1_uses_fallback_path():
     """batch>1 always routes through fallback regardless of ggml availability."""
-    from tinyserve.ggml_forward import GGMLExpertForward
+    from tinyserve.ggml_compute import GGMLExpertForward
 
     hidden = 64
     inter = 128
@@ -200,7 +200,7 @@ def test_ggml_forward_batch_gt1_uses_fallback_path():
 
 def test_ggml_forward_offsets_baked_in_init():
     """Offsets are computed once in __init__, not per forward call."""
-    from tinyserve.ggml_forward import GGMLExpertForward
+    from tinyserve.ggml_compute import GGMLExpertForward
 
     hidden = 32
     inter = 64

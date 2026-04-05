@@ -12,7 +12,7 @@ Graceful fallback: HAS_INT4_GPU is False if ops or CUDA unavailable.
 
 import torch
 
-from .expert_forward import _QUICK_GELU_COEFF
+from .expert_compute import _QUICK_GELU_COEFF
 from .expert_store import TensorLayout
 
 HAS_INT4_GPU = (

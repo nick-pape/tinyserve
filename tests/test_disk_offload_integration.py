@@ -4,7 +4,7 @@ import torch
 import torch.nn.functional as F
 
 from tests.conftest import requires_cuda
-from tinyserve.cpu_expert import CPUExpertForward
+from tinyserve.cpu_compute import CPUExpertForward
 from tinyserve.expert_store import ExpertStore, TensorLayout
 from tinyserve.ram_cache import RAMCache, madvise_willneed
 

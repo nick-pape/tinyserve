@@ -4,7 +4,7 @@ import pytest
 import torch
 import torch.nn.functional as F
 
-from tinyserve.cpu_expert import HAS_INT4_CPU
+from tinyserve.cpu_compute import HAS_INT4_CPU
 from tinyserve.expert_store import TensorLayout, _pack_tensors
 from tinyserve.mxfp4 import dequant_mxfp4_no_transpose
 
@@ -156,7 +156,7 @@ class TestGPUINT4MatchesCPU:
     @pytest.mark.skipif(not HAS_INT4_CPU, reason="CPU INT4 ops not available")
     def test_gpu_matches_cpu_silu(self):
         """GPU INT4 forward should produce outputs close to CPU INT4 forward."""
-        from tinyserve.cpu_expert import CPUINT4Forward
+        from tinyserve.cpu_compute import CPUINT4Forward
         from tinyserve.gpu_int4 import GPUINT4Forward
 
         torch.manual_seed(42)
