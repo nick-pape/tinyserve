@@ -273,7 +273,7 @@ class ExpertPipeline:
                     buf = self.staging_buffer_a
                     self.store.copy_to_buffer(buf, layer_idx, eid, non_blocking=False)
                     torch.cuda.synchronize()
-                    out = self._nq_forward.forward(buf.packed, h)
+                    out = self._nq_forward.forward(buf.packed, h, layer_idx=layer_idx)
                     if cache is not None:
                         slot = cache.allocate(layer_idx, eid)
                         cache.get_packed(slot).copy_(buf.packed)
