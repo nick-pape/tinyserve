@@ -29,7 +29,7 @@ from typing import Any
 import torch
 
 from .paged_kv_cache import PAGE_SIZE, PagedKVPool, PagedRequestKVCache
-from .static_kv_cache import StaticKVCache
+from .kv_cache import KVCache
 
 logger = logging.getLogger("tinyserve")
 
@@ -39,7 +39,7 @@ class Request:
     request_id: str
     input_ids: torch.Tensor
     max_tokens: int
-    kv_cache: PagedRequestKVCache | StaticKVCache
+    kv_cache: PagedRequestKVCache | KVCache
     generated: list[int] = field(default_factory=list)
     start_time: float = 0.0
     prefill_done: bool = False

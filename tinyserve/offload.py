@@ -550,7 +550,7 @@ def offload_model(
 
     # Allocate KV cache first (if requested), then give remainder to expert cache.
     from .expert_cache import ExpertCache
-    from .static_kv_cache import StaticKVCache
+    from .kv_cache import KVCache
 
     model_config = model.config
     buf_bytes = store.buffer_expert_bytes
@@ -571,13 +571,13 @@ def offload_model(
     )
     if max_seq_len > 0:
         storage_device = "cpu" if kv_offload else None
-        kv_cache = StaticKVCache.from_model_config(
-            model_config, max_seq_len=max_seq_len, device=device, dtype=kv_dtype, storage_device=storage_device
+        kv_cache = KVCache.preallocate(
+            model_config, max_context_tokens=max_seq_len, device=device, kv_storage_dtype=kv_dtype, storage_device=storage_device
         )
         if use_flex:
             kv_cache.static_shapes = True
         if streaming:
-            kv_cache.enable_streaming(sink_size=streaming_sink_size, window_size=streaming_window_size)
+            kv_cache.enable_sliding_window(kv_window_tokens=streaming_window_size, kv_sink_tokens=streaming_sink_size)
         kv_vram = kv_cache.vram_bytes
 
     if buf_bytes > 0:
