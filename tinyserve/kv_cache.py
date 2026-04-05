@@ -108,32 +108,6 @@ class KVCache:
             cache.is_sliding = [True] * effective.num_hidden_layers
         return cache
 
-    @classmethod
-    def from_model_config(cls, config, max_seq_len=4096, device="cuda", dtype=torch.float8_e4m3fn, storage_device=None):
-        """HF-compat alias for preallocate — removed in Task 12."""
-        effective = getattr(config, "text_config", config)
-        head_dim = getattr(effective, "head_dim", None)
-        if head_dim is None:
-            head_dim = effective.hidden_size // effective.num_attention_heads
-        cache = cls(
-            max_seq_len=max_seq_len,
-            num_layers=effective.num_hidden_layers,
-            num_kv_heads=effective.num_key_value_heads,
-            head_dim=head_dim,
-            device=torch.device(device),
-            dtype=dtype,
-            storage_device=torch.device(storage_device) if storage_device is not None else None,
-        )
-        sliding_window = getattr(effective, "sliding_window", None)
-        layer_types = getattr(effective, "layer_types", None)
-        if sliding_window is not None and layer_types is not None:
-            cache._sliding_window = sliding_window
-            cache.is_sliding = [lt == "sliding_attention" for lt in layer_types[: effective.num_hidden_layers]]
-        elif sliding_window is not None:
-            cache._sliding_window = sliding_window
-            cache.is_sliding = [True] * effective.num_hidden_layers
-        return cache
-
     @staticmethod
     def bytes_per_token(num_layers, num_kv_heads, head_dim, dtype=torch.bfloat16):
         elem_size = torch.tensor([], dtype=dtype).element_size()
@@ -321,10 +295,6 @@ class KVCache:
         self._sink_size = kv_sink_tokens
         self._window_size = kv_window_tokens
 
-    def enable_streaming(self, sink_size: int = 4, window_size: int = 1024) -> None:
-        """Backward-compat alias for enable_sliding_window — removed in Task 12."""
-        self.enable_sliding_window(kv_window_tokens=window_size, kv_sink_tokens=sink_size)
-
     def _evict_streaming(self, layer_idx: int) -> None:
         """Compact KV to [sinks | recent_window] if streaming is enabled."""
         if not getattr(self, "_streaming", False):
@@ -419,6 +389,3 @@ class KVCache:
         self._h2o_scores[layer_idx, self._h2o_budget :] = 0
 
         self._seq_lens[layer_idx] = self._h2o_budget
-
-
-StaticKVCache = KVCache

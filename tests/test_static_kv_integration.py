@@ -35,7 +35,7 @@ def test_static_kv_cache_forward_pass():
 
     offloaded = offload_model(model, device=device, cache_capacity=16)
 
-    kv = StaticKVCache.from_model_config(config, max_seq_len=64, device=device)
+    kv = StaticKVCache.preallocate(config, max_context_tokens=64, device=device)
     input_ids = torch.tensor([[1, 42, 100]], device=device)
 
     # Prefill

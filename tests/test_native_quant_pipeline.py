@@ -105,7 +105,7 @@ def store(layout):
 
 @pytest.fixture
 def pipeline(store, device):
-    from tinyserve.expert_pipeline import ExpertPipeline
+    from tinyserve.expert_execution import ExpertPipeline
 
     template = nn.Linear(1, 1)
     buf_a = store.allocate_buffer(device)

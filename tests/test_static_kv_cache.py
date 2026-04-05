@@ -292,7 +292,7 @@ def test_cpu_storage_static_shapes():
     assert torch.equal(k_out[:, :, :3], k)
 
 
-def test_from_model_config_storage_device():
+def test_preallocate_storage_device():
     class FakeConfig:
         num_hidden_layers = 2
         num_key_value_heads = 4
@@ -300,11 +300,11 @@ def test_from_model_config_storage_device():
         hidden_size = 64
         head_dim = 8
 
-    cache = StaticKVCache.from_model_config(
+    cache = StaticKVCache.preallocate(
         FakeConfig(),
-        max_seq_len=32,
+        max_context_tokens=32,
         device="cpu",
-        dtype=torch.bfloat16,
+        kv_storage_dtype=torch.bfloat16,
         storage_device="cpu",
     )
     assert cache._storage_device == torch.device("cpu")
@@ -345,8 +345,8 @@ def test_static_shapes_default_off():
     assert k_out.shape == (1, 2, 5, 4)
 
 
-def test_from_model_config_sliding_window_with_layer_types():
-    """from_model_config populates is_sliding and _sliding_window from layer_types."""
+def test_preallocate_sliding_window_with_layer_types():
+    """preallocate populates is_sliding and _sliding_window from layer_types."""
 
     class FakeConfig:
         num_hidden_layers = 4
@@ -362,18 +362,18 @@ def test_from_model_config_sliding_window_with_layer_types():
             "full_attention",
         ]
 
-    cache = StaticKVCache.from_model_config(
+    cache = StaticKVCache.preallocate(
         FakeConfig(),
-        max_seq_len=64,
+        max_context_tokens=64,
         device="cpu",
-        dtype=torch.bfloat16,
+        kv_storage_dtype=torch.bfloat16,
     )
     assert cache._sliding_window == 16
     assert cache.is_sliding == [True, False, True, False]
 
 
-def test_from_model_config_sliding_window_no_layer_types():
-    """from_model_config marks all layers sliding when no layer_types present."""
+def test_preallocate_sliding_window_no_layer_types():
+    """preallocate marks all layers sliding when no layer_types present."""
 
     class FakeConfig:
         num_hidden_layers = 3
@@ -383,18 +383,18 @@ def test_from_model_config_sliding_window_no_layer_types():
         head_dim = 8
         sliding_window = 32
 
-    cache = StaticKVCache.from_model_config(
+    cache = StaticKVCache.preallocate(
         FakeConfig(),
-        max_seq_len=64,
+        max_context_tokens=64,
         device="cpu",
-        dtype=torch.bfloat16,
+        kv_storage_dtype=torch.bfloat16,
     )
     assert cache._sliding_window == 32
     assert cache.is_sliding == [True, True, True]
 
 
-def test_from_model_config_no_sliding_window():
-    """from_model_config leaves is_sliding all False when no sliding_window."""
+def test_preallocate_no_sliding_window():
+    """preallocate leaves is_sliding all False when no sliding_window."""
 
     class FakeConfig:
         num_hidden_layers = 2
@@ -403,11 +403,11 @@ def test_from_model_config_no_sliding_window():
         hidden_size = 32
         head_dim = 8
 
-    cache = StaticKVCache.from_model_config(
+    cache = StaticKVCache.preallocate(
         FakeConfig(),
-        max_seq_len=64,
+        max_context_tokens=64,
         device="cpu",
-        dtype=torch.bfloat16,
+        kv_storage_dtype=torch.bfloat16,
     )
     assert cache._sliding_window is None
     assert cache.is_sliding == [False, False]
@@ -518,7 +518,7 @@ def test_streaming_eviction_self_heals_on_overflow():
         device=torch.device("cpu"),
         dtype=torch.bfloat16,
     )
-    cache.enable_streaming(sink_size=sink, window_size=window)
+    cache.enable_sliding_window(kv_window_tokens=window, kv_sink_tokens=sink)
 
     # Fill the cache to capacity (256 tokens in two chunks)
     k_fill = torch.randn(1, 2, max_seq_len, 4, dtype=torch.bfloat16)
@@ -552,7 +552,7 @@ def test_streaming_eviction_repeated_overflow_self_heals():
         device=torch.device("cpu"),
         dtype=torch.bfloat16,
     )
-    cache.enable_streaming(sink_size=sink, window_size=window)
+    cache.enable_sliding_window(kv_window_tokens=window, kv_sink_tokens=sink)
 
     # Fill cache twice (each time eviction re-compacts to sink+window=204)
     chunk_size = 52  # sink(4) + window(200) + chunk(52) = 256 exactly fills max_seq_len
@@ -585,7 +585,7 @@ def test_streaming_eviction_preserves_sink_tokens():
         device=torch.device("cpu"),
         dtype=torch.bfloat16,
     )
-    cache.enable_streaming(sink_size=sink, window_size=window)
+    cache.enable_sliding_window(kv_window_tokens=window, kv_sink_tokens=sink)
 
     # Fill cache with tokens 0..29, each token i has value i in all dims
     k_fill = torch.stack(
@@ -640,7 +640,7 @@ def test_streaming_no_eviction_when_below_capacity():
         device=torch.device("cpu"),
         dtype=torch.bfloat16,
     )
-    cache.enable_streaming(sink_size=sink, window_size=window)
+    cache.enable_sliding_window(kv_window_tokens=window, kv_sink_tokens=sink)
 
     k = torch.randn(1, 2, 50, 4, dtype=torch.bfloat16)
     v = torch.randn(1, 2, 50, 4, dtype=torch.bfloat16)
@@ -661,7 +661,7 @@ def test_streaming_eviction_handles_seq_len_smaller_than_window():
         head_dim=4,
         device=torch.device("cuda"),
     )
-    cache.enable_streaming(sink_size=4, window_size=1024)
+    cache.enable_sliding_window(kv_window_tokens=1024, kv_sink_tokens=4)
     k = torch.randn(1, 1, 32, 4, device="cuda", dtype=torch.bfloat16)
     v = torch.randn(1, 1, 32, 4, device="cuda", dtype=torch.bfloat16)
     cache.update(k, v, layer_idx=0)
@@ -679,7 +679,7 @@ def test_streaming_eviction_at_exact_capacity():
         head_dim=4,
         device=torch.device("cuda"),
     )
-    cache.enable_streaming(sink_size=4, window_size=60)
+    cache.enable_sliding_window(kv_window_tokens=60, kv_sink_tokens=4)
     k = torch.randn(1, 1, 64, 4, device="cuda", dtype=torch.bfloat16)
     v = torch.randn(1, 1, 64, 4, device="cuda", dtype=torch.bfloat16)
     cache.update(k, v, layer_idx=0)

@@ -1,0 +1,101 @@
+=== Context Length Benchmark ===
+Model: openai/gpt-oss-20b
+GPU: NVIDIA RTX PRO 2000 Blackwell Generation Laptop GPU
+Streaming: False
+
+Fetching 42 files:   0%|          | 0/42 [00:00<?, ?it/s]Fetching 42 files:   2%|▏         | 1/42 [00:00<00:21,  1.94it/s]Fetching 42 files:   5%|▍         | 2/42 [00:00<00:14,  2.74it/s]Fetching 42 files:  10%|▉         | 4/42 [00:01<00:10,  3.71it/s]Fetching 42 files:  12%|█▏        | 5/42 [00:01<00:09,  3.97it/s]'[Errno 104] Connection reset by peer' thrown while requesting HEAD https://huggingface.co/kernels-community/gpt-oss-triton-kernels/resolve/76c23fb9a6607cd5c62c1e6b8e7f436ec5385517/build/torch-cuda/matmul_ogs_details/_finalize_matmul.py
+Retrying in 1s [Retry 1/5].
+Fetching 42 files:  17%|█▋        | 7/42 [00:03<00:17,  1.98it/s]
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/elnur/gpt-oss-offload/scripts/bench_context.py", line 171, in <module>
+    main()
+  File "/home/elnur/gpt-oss-offload/scripts/bench_context.py", line 127, in main
+    model = load_and_offload(
+            ^^^^^^^^^^^^^^^^^
+  File "/home/elnur/gpt-oss-offload/tinyserve/offload.py", line 763, in load_and_offload
+    model = AutoModelForCausalLM.from_pretrained(
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elnur/.local/lib/python3.12/site-packages/transformers/models/auto/auto_factory.py", line 387, in from_pretrained
+    return model_class.from_pretrained(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elnur/.local/lib/python3.12/site-packages/transformers/modeling_utils.py", line 4093, in from_pretrained
+    hf_quantizer.preprocess_model(
+  File "/home/elnur/.local/lib/python3.12/site-packages/transformers/quantizers/base.py", line 171, in preprocess_model
+    self._process_model_before_weight_loading(model, **kwargs)
+  File "/home/elnur/.local/lib/python3.12/site-packages/transformers/quantizers/quantizer_mxfp4.py", line 207, in _process_model_before_weight_loading
+    model = replace_with_mxfp4_linear(
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elnur/.local/lib/python3.12/site-packages/transformers/integrations/mxfp4.py", line 690, in replace_with_mxfp4_linear
+    triton_kernels_hub = get_kernel("kernels-community/gpt-oss-triton-kernels")
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elnur/.local/lib/python3.12/site-packages/transformers/integrations/hub_kernels.py", line 434, in get_kernel
+    return get_kernel_hub(kernel_name, revision=revision, version=version, user_agent=user_agent)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elnur/.local/lib/python3.12/site-packages/kernels/utils.py", line 320, in get_kernel
+    package_name, variant_path = install_kernel(
+                                 ^^^^^^^^^^^^^^^
+  File "/home/elnur/.local/lib/python3.12/site-packages/kernels/utils.py", line 195, in install_kernel
+    snapshot_download(
+  File "/home/elnur/.local/lib/python3.12/site-packages/huggingface_hub/utils/_validators.py", line 89, in _inner_fn
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/home/elnur/.local/lib/python3.12/site-packages/huggingface_hub/_snapshot_download.py", line 450, in snapshot_download
+    thread_map(
+  File "/home/elnur/.local/lib/python3.12/site-packages/tqdm/contrib/concurrent.py", line 69, in thread_map
+    return _executor_map(ThreadPoolExecutor, fn, *iterables, **tqdm_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elnur/.local/lib/python3.12/site-packages/tqdm/contrib/concurrent.py", line 51, in _executor_map
+    return list(tqdm_class(ex.map(fn, *iterables, chunksize=chunksize), **kwargs))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elnur/.local/lib/python3.12/site-packages/tqdm/std.py", line 1181, in __iter__
+    for obj in iterable:
+  File "/usr/lib/python3.12/concurrent/futures/_base.py", line 619, in result_iterator
+    yield _result_or_cancel(fs.pop())
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/concurrent/futures/_base.py", line 317, in _result_or_cancel
+    return fut.result(timeout)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/concurrent/futures/_base.py", line 456, in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/usr/lib/python3.12/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elnur/.local/lib/python3.12/site-packages/huggingface_hub/_snapshot_download.py", line 430, in _inner_hf_hub_download
+    hf_hub_download(  # type: ignore
+  File "/home/elnur/.local/lib/python3.12/site-packages/huggingface_hub/utils/_validators.py", line 89, in _inner_fn
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/home/elnur/.local/lib/python3.12/site-packages/huggingface_hub/file_download.py", line 986, in hf_hub_download
+    return _hf_hub_download_to_cache_dir(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elnur/.local/lib/python3.12/site-packages/huggingface_hub/file_download.py", line 1119, in _hf_hub_download_to_cache_dir
+    _get_metadata_or_catch_error(
+  File "/home/elnur/.local/lib/python3.12/site-packages/huggingface_hub/file_download.py", line 1653, in _get_metadata_or_catch_error
+    metadata = get_hf_file_metadata(
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elnur/.local/lib/python3.12/site-packages/huggingface_hub/utils/_validators.py", line 89, in _inner_fn
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/home/elnur/.local/lib/python3.12/site-packages/huggingface_hub/file_download.py", line 1576, in get_hf_file_metadata
+    response = _httpx_follow_relative_redirects_with_backoff(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elnur/.local/lib/python3.12/site-packages/huggingface_hub/utils/_http.py", line 685, in _httpx_follow_relative_redirects_with_backoff
+    response = http_backoff(
+               ^^^^^^^^^^^^^
+  File "/home/elnur/.local/lib/python3.12/site-packages/huggingface_hub/utils/_http.py", line 559, in http_backoff
+    return next(
+           ^^^^^
+  File "/home/elnur/.local/lib/python3.12/site-packages/huggingface_hub/utils/_http.py", line 467, in _http_backoff_base
+    response = client.request(method=method, url=url, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elnur/.local/lib/python3.12/site-packages/httpx/_client.py", line 825, in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/elnur/.local/lib/python3.12/site-packages/httpx/_client.py", line 901, in send
+    raise RuntimeError("Cannot send a request, as the client has been closed.")
+RuntimeError: Cannot send a request, as the client has been closed.

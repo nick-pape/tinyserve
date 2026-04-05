@@ -415,6 +415,3 @@ def make_eviction_policy(name: str, capacity: int) -> EvictionPolicy:
     raise ValueError(f"Unknown cache policy: {name!r}. Choose from 'lru', 'slru', 'lfu', 'lfru', 'fifo', 'ls', 'dali'.")
 
 
-# Backward-compat aliases — removed in Task 12
-CachePolicy = EvictionPolicy
-make_policy = make_eviction_policy

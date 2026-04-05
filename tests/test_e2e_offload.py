@@ -87,7 +87,7 @@ def _extract_expert_weights(model, num_layers, num_experts):
 @requires_cuda
 def test_offloaded_model_matches_reference():
     """Full MoE model with offloaded experts produces identical logits."""
-    from tinyserve.expert_pipeline import ExpertPipeline
+    from tinyserve.expert_execution import ExpertPipeline
     from tinyserve.expert_store import ExpertStore
 
     torch.manual_seed(42)
@@ -154,7 +154,7 @@ def test_offloaded_model_matches_reference():
 @requires_cuda
 def test_offloaded_autoregressive_matches():
     """Multi-step autoregressive generation produces identical tokens."""
-    from tinyserve.expert_pipeline import ExpertPipeline
+    from tinyserve.expert_execution import ExpertPipeline
     from tinyserve.expert_store import ExpertStore
 
     torch.manual_seed(123)

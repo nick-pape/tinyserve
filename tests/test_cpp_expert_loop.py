@@ -254,7 +254,7 @@ class TestFastForwardMatchesPython:
         assert torch.allclose(result, torch.zeros_like(result))
 
     def test_build_cpp_layout_args(self):
-        from tinyserve.expert_pipeline import _build_cpp_layout_args
+        from tinyserve.expert_execution import _build_cpp_layout_args
 
         layout = TensorLayout(
             {
@@ -271,7 +271,7 @@ class TestFastForwardMatchesPython:
         assert args_swiglu["activation"] == "swiglu"
 
     def test_build_cpp_layout_args_returns_none_for_mxfp4(self):
-        from tinyserve.expert_pipeline import _build_cpp_layout_args
+        from tinyserve.expert_execution import _build_cpp_layout_args
 
         layout = TensorLayout(
             {

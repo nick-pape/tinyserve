@@ -35,7 +35,7 @@ def _build_expert_weights(num_layers, num_experts, hidden, intermediate, dtype=t
 @requires_cuda
 def test_weight_swap_produces_correct_expert_output():
     """Swapping weights into a template expert produces correct output."""
-    from tinyserve.expert_pipeline import swap_weights_and_forward
+    from tinyserve.expert_execution import swap_weights_and_forward
     from tinyserve.expert_store import ExpertStore
 
     hidden, intermediate = 32, 64
@@ -69,7 +69,7 @@ def test_weight_swap_produces_correct_expert_output():
 @requires_cuda
 def test_pipeline_output_matches_direct_expert_compute():
     """Full pipeline (cache + double-buffer) matches direct expert computation."""
-    from tinyserve.expert_pipeline import ExpertPipeline
+    from tinyserve.expert_execution import ExpertPipeline
     from tinyserve.expert_store import ExpertStore
 
     hidden, intermediate = 32, 64
@@ -119,7 +119,7 @@ def test_pipeline_output_matches_direct_expert_compute():
 @requires_cuda
 def test_repeated_expert_is_cache_hit():
     """Second call (all cache hits) produces identical output to first call (all misses)."""
-    from tinyserve.expert_pipeline import ExpertPipeline
+    from tinyserve.expert_execution import ExpertPipeline
     from tinyserve.expert_store import ExpertStore
 
     hidden, intermediate = 32, 64
@@ -158,7 +158,7 @@ def test_repeated_expert_is_cache_hit():
 @requires_cuda
 def test_previous_token_experts_are_hits_after_begin_pass():
     """LeastStalePolicy: after begin_pass(), experts from the previous token are hits."""
-    from tinyserve.expert_pipeline import ExpertPipeline
+    from tinyserve.expert_execution import ExpertPipeline
     from tinyserve.expert_store import ExpertCache, ExpertStore
 
     hidden, intermediate = 32, 64
@@ -212,7 +212,7 @@ def test_previous_token_experts_are_hits_after_begin_pass():
 @requires_cuda
 def test_pipeline_handles_multiple_tokens():
     """Pipeline handles multiple tokens correctly."""
-    from tinyserve.expert_pipeline import ExpertPipeline
+    from tinyserve.expert_execution import ExpertPipeline
     from tinyserve.expert_store import ExpertStore
 
     hidden, intermediate = 32, 64

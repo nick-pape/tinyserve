@@ -122,7 +122,7 @@ class TestDequantQ8_0KnownValues:
 
     def test_dequant_q8_0_known_values(self):
         """Manually constructed Q8_0 block dequants to exact expected values."""
-        from tinyserve.gguf_dequant_torch import dequant_tensor
+        from tinyserve.gguf_dequant import dequant_tensor
 
         GGML_Q8_0 = 8
         scale_f16 = np.float16(2.0)
@@ -141,7 +141,7 @@ class TestDequantQ8_0KnownValues:
 
     def test_dequant_q8_0_accepts_uint8_tensor(self):
         """dequant_tensor accepts torch.Tensor of dtype uint8 as data input."""
-        from tinyserve.gguf_dequant_torch import dequant_tensor
+        from tinyserve.gguf_dequant import dequant_tensor
 
         GGML_Q8_0 = 8
         scale_f16 = np.float16(1.0)
@@ -157,7 +157,7 @@ class TestDequantQ8_0KnownValues:
 
     def test_dequant_q8_0_negative_quants(self):
         """Q8_0 with negative int8 quants produces correct negative float output."""
-        from tinyserve.gguf_dequant_torch import dequant_tensor
+        from tinyserve.gguf_dequant import dequant_tensor
 
         GGML_Q8_0 = 8
         scale_f16 = np.float16(0.5)
@@ -175,7 +175,7 @@ class TestDequantQ4KMatchesReference:
 
     def test_dequant_q4k_matches_reference_single_block(self):
         """Single Q4_K block built in real GGUF format matches Python reference decode."""
-        from tinyserve.gguf_dequant_torch import dequant_tensor
+        from tinyserve.gguf_dequant import dequant_tensor
 
         GGML_Q4_K = 12
         np.random.seed(7)
@@ -192,7 +192,7 @@ class TestDequantQ4KMatchesReference:
 
     def test_dequant_q4k_matches_reference_multi_block(self):
         """Multiple Q4_K blocks in GGUF format match Python reference decode."""
-        from tinyserve.gguf_dequant_torch import dequant_tensor
+        from tinyserve.gguf_dequant import dequant_tensor
 
         GGML_Q4_K = 12
         np.random.seed(99)
@@ -216,7 +216,7 @@ class TestDequantQ4KMatchesReference:
 
     def test_dequant_q4k_2d_shape(self):
         """Q4_K dequant correctly reshapes to 2D output."""
-        from tinyserve.gguf_dequant_torch import dequant_tensor
+        from tinyserve.gguf_dequant import dequant_tensor
 
         GGML_Q4_K = 12
         np.random.seed(11)
@@ -232,7 +232,7 @@ class TestDequantQ4KMatchesReference:
 
     def test_dequant_q4k_round_trip_correlation(self):
         """Q4_K dequant output correlates strongly with the original float values."""
-        from tinyserve.gguf_dequant_torch import dequant_tensor
+        from tinyserve.gguf_dequant import dequant_tensor
 
         GGML_Q4_K = 12
         np.random.seed(42)
@@ -249,14 +249,14 @@ class TestDequantQ4KMatchesReference:
 class TestDequantUnsupportedRaises:
     def test_unsupported_type_raises_value_error(self):
         """Unsupported GGML type raises ValueError with type id in message."""
-        from tinyserve.gguf_dequant_torch import dequant_tensor
+        from tinyserve.gguf_dequant import dequant_tensor
 
         with pytest.raises(ValueError, match="99"):
             dequant_tensor(b"\x00" * 100, 99, (32,))
 
     def test_type_0_not_supported(self):
         """F32 (type 0) raises ValueError — caller should cast directly."""
-        from tinyserve.gguf_dequant_torch import dequant_tensor
+        from tinyserve.gguf_dequant import dequant_tensor
 
         with pytest.raises(ValueError):
             dequant_tensor(b"\x00" * 4, 0, (1,))
@@ -306,7 +306,7 @@ class TestDequantLegacyTypes:
         return blocks
 
     def test_q4_0_shape_no_nan(self):
-        from tinyserve.gguf_dequant_torch import dequant_tensor
+        from tinyserve.gguf_dequant import dequant_tensor
 
         data = self._make_q4_0_blocks(4)
         result = dequant_tensor(data, 2, (128,))
@@ -315,7 +315,7 @@ class TestDequantLegacyTypes:
         assert not torch.isinf(result).any()
 
     def test_q4_1_shape_no_nan(self):
-        from tinyserve.gguf_dequant_torch import dequant_tensor
+        from tinyserve.gguf_dequant import dequant_tensor
 
         data = self._make_q4_1_blocks(4)
         result = dequant_tensor(data, 3, (128,))
@@ -323,7 +323,7 @@ class TestDequantLegacyTypes:
         assert not torch.isnan(result).any()
 
     def test_q5_0_shape_no_nan(self):
-        from tinyserve.gguf_dequant_torch import dequant_tensor
+        from tinyserve.gguf_dequant import dequant_tensor
 
         data = self._make_q5_0_blocks(4)
         result = dequant_tensor(data, 6, (128,))
@@ -331,7 +331,7 @@ class TestDequantLegacyTypes:
         assert not torch.isnan(result).any()
 
     def test_q5_1_shape_no_nan(self):
-        from tinyserve.gguf_dequant_torch import dequant_tensor
+        from tinyserve.gguf_dequant import dequant_tensor
 
         data = self._make_q5_1_blocks(4)
         result = dequant_tensor(data, 7, (128,))

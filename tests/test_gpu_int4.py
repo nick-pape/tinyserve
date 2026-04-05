@@ -304,12 +304,12 @@ class TestGPUINT4PipelineIntegration:
 
         layout = _make_mxfp4_layout(2 * OUT_FEATURES, IN_FEATURES, IN_FEATURES)
         # _build_inline_forward returns None for MXFP4
-        from tinyserve.expert_pipeline import _build_inline_forward
+        from tinyserve.expert_execution import _build_inline_forward
 
         assert _build_inline_forward(layout, F.silu) is None
 
         # _build_gpu_int4_forward should return a GPUINT4Forward-based callable
-        from tinyserve.expert_pipeline import _build_gpu_int4_forward
+        from tinyserve.expert_execution import _build_gpu_int4_forward
 
         gpu_fwd = _build_gpu_int4_forward(layout, F.silu)
         assert gpu_fwd is not None
@@ -317,7 +317,7 @@ class TestGPUINT4PipelineIntegration:
     @requires_gpu_int4
     def test_gpu_int4_inline_produces_valid_output(self):
         """GPU INT4 inline forward from pipeline should produce valid output."""
-        from tinyserve.expert_pipeline import _build_gpu_int4_forward
+        from tinyserve.expert_execution import _build_gpu_int4_forward
 
         gu_blocks, gu_scales = _make_mxfp4_weights(2 * OUT_FEATURES, IN_FEATURES, seed=42)
         intermediate = OUT_FEATURES

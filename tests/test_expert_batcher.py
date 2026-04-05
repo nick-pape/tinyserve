@@ -60,7 +60,7 @@ def _ref_expert_output(expert_weights, layer_idx, expert_ids, routing_weights, h
 def test_single_request_matches_unbatched():
     """Single request through ExpertBatcher matches pipeline.execute_layer_experts."""
     from tinyserve.expert_batcher import BatchItem, ExpertBatcher
-    from tinyserve.expert_pipeline import ExpertPipeline
+    from tinyserve.expert_execution import ExpertPipeline
     from tinyserve.expert_store import ExpertCache
 
     hidden, intermediate = 16, 32
@@ -106,7 +106,7 @@ def test_single_request_matches_unbatched():
 def test_two_requests_same_expert_batched():
     """Two requests needing the same expert: expert loaded once, both get correct output."""
     from tinyserve.expert_batcher import BatchItem, ExpertBatcher
-    from tinyserve.expert_pipeline import ExpertPipeline
+    from tinyserve.expert_execution import ExpertPipeline
     from tinyserve.expert_store import ExpertCache
 
     hidden, intermediate = 16, 32
@@ -149,7 +149,7 @@ def test_two_requests_same_expert_batched():
 def test_two_requests_different_experts():
     """Two requests with non-overlapping experts both produce correct output."""
     from tinyserve.expert_batcher import BatchItem, ExpertBatcher
-    from tinyserve.expert_pipeline import ExpertPipeline
+    from tinyserve.expert_execution import ExpertPipeline
     from tinyserve.expert_store import ExpertCache
 
     hidden, intermediate = 16, 32
@@ -192,7 +192,7 @@ def test_two_requests_different_experts():
 def test_scatter_correct_order():
     """With 3 requests and mixed expert assignments, outputs land in correct request slots."""
     from tinyserve.expert_batcher import BatchItem, ExpertBatcher
-    from tinyserve.expert_pipeline import ExpertPipeline
+    from tinyserve.expert_execution import ExpertPipeline
     from tinyserve.expert_store import ExpertCache
 
     hidden, intermediate = 16, 32
@@ -231,7 +231,7 @@ def test_scatter_correct_order():
 def test_cache_hit_batched():
     """Cache hits across requests are served without re-loading experts."""
     from tinyserve.expert_batcher import BatchItem, ExpertBatcher
-    from tinyserve.expert_pipeline import ExpertPipeline
+    from tinyserve.expert_execution import ExpertPipeline
     from tinyserve.expert_store import ExpertCache
 
     hidden, intermediate = 16, 32
@@ -282,7 +282,7 @@ def test_cache_hit_batched():
 def test_empty_requests():
     """Empty request list returns empty output list."""
     from tinyserve.expert_batcher import ExpertBatcher
-    from tinyserve.expert_pipeline import ExpertPipeline
+    from tinyserve.expert_execution import ExpertPipeline
 
     hidden, intermediate = 16, 32
     num_experts = 4
@@ -307,7 +307,7 @@ def test_empty_requests():
 def test_batch_size_one_no_regression():
     """Batch of size 1 produces identical output to unbatched path."""
     from tinyserve.expert_batcher import BatchItem, ExpertBatcher
-    from tinyserve.expert_pipeline import ExpertPipeline
+    from tinyserve.expert_execution import ExpertPipeline
     from tinyserve.expert_store import ExpertCache
 
     hidden, intermediate = 16, 32

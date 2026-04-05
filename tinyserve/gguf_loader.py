@@ -1,4 +1,4 @@
-# Backward-compat shim — removed in Task 12
+# Backward-compat shim — kept permanently (external API surface)
 from .gguf_model_loader import *  # noqa: F401, F403
 from .gguf_model_loader import (  # noqa: F401 (re-export underscore names not covered by *)
     _build_expert_store_from_fused_reader,

@@ -1,0 +1,30 @@
+[
+  {
+    "context": 0,
+    "status": "OK",
+    "prefill_ms": 1415.0,
+    "decode_tps": 29.77,
+    "decode_ms": 33.6,
+    "kv_seq_len": 21
+  },
+  {
+    "context": 256,
+    "status": "OK",
+    "prefill_ms": 1403.0,
+    "decode_tps": 28.2,
+    "decode_ms": 35.5,
+    "kv_seq_len": 276
+  },
+  {
+    "context": 1024,
+    "status": "OK",
+    "prefill_ms": 3495.0,
+    "decode_tps": 28.79,
+    "decode_ms": 34.7,
+    "kv_seq_len": 1044
+  },
+  {
+    "context": 4096,
+    "status": "WARMUP_FAIL: index 229 is out of bounds for dimension 0 with size 229"
+  }
+]

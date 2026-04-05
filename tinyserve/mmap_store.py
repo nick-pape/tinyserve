@@ -443,7 +443,7 @@ class FusedMmapExpertStore:
         expert_idx: int,
         non_blocking: bool = False,
     ) -> None:
-        # Backward-compat shim — removed in Task 12
+        # Backward-compat shim — kept permanently (external API surface)
         return self.copy_packed_weights(buf, layer_idx, expert_idx, non_blocking=non_blocking)
 
     def copy_to_buffer_slot(

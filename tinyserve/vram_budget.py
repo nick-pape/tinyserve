@@ -73,8 +73,6 @@ class VRAMBudget:
         )
         return True
 
-    handle_overflow = reclaim_slots_for_kv  # backward-compat alias — removed in Task 12
-
     def release_kv(self) -> None:
         """Called when a request completes. Grows expert cache back from freed KV space."""
         expert_cap = self.expert_cache.capacity

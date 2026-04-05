@@ -90,7 +90,7 @@ class TestCPUForwardFromStore:
 class TestPipelineCPUExpert:
     @requires_cuda
     def test_cpu_expert_matches_gpu_pipeline(self):
-        from tinyserve.expert_pipeline import ExpertPipeline
+        from tinyserve.expert_execution import ExpertPipeline
 
         torch.manual_seed(42)
         store, layout, w_gu, w_dn = _make_store_and_weights()

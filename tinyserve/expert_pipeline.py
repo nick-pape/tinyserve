@@ -1,4 +1,4 @@
-# Backward-compat shim — removed in Task 12
+# Backward-compat shim — kept permanently (external API surface)
 from .expert_execution import (  # noqa: F401
     ExpertPipeline,
     _build_cpp_layout_args,

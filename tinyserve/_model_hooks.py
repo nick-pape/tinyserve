@@ -1,4 +1,4 @@
-# Backward-compat shim — removed in Task 12
+# Backward-compat shim — kept permanently (external API surface)
 from .model_hooks import *  # noqa: F401, F403
 from .model_hooks import (  # noqa: F401
     _mxfp4_linear,

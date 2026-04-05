@@ -57,7 +57,7 @@ GGML_Q6_K = 14
 def _ref_matvec(weight_bytes: torch.Tensor, act: torch.Tensor,
                 ggml_type: int, N: int, K: int) -> torch.Tensor:
     """Reference matvec via PyTorch dequant fallback."""
-    from tinyserve.gguf_dequant_torch import dequant_tensor
+    from tinyserve.gguf_dequant import dequant_tensor
 
     w_f32 = dequant_tensor(weight_bytes.cpu(), ggml_type, (N, K))
     act_f32 = act.float().cpu().view(1, K)

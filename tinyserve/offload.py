@@ -1,4 +1,4 @@
-# Backward-compat shim — replaced by engine.py. Removed in Task 12.
+# Backward-compat shim — kept permanently (external API surface)
 from .engine import *  # noqa: F401, F403
 from .engine import (  # noqa: F401 - explicit re-export of private symbols accessed by tests
     _ROUTING_MAP,

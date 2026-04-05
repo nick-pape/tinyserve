@@ -234,7 +234,7 @@ def test_chunked_prefill_with_streaming_at_capacity():
         head_dim=4,
         device=torch.device("cuda"),
     )
-    cache.enable_streaming(sink_size=4, window_size=28)  # max_kept=32
+    cache.enable_sliding_window(kv_window_tokens=28, kv_sink_tokens=4)  # max_kept=32
 
     class KVPushModel:
         def __call__(self, input_ids, past_key_values=None):
