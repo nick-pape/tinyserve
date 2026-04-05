@@ -776,7 +776,7 @@ class ExpertPipeline:
                     cache_slot.copy_(self.store._data[layer_idx, eid], non_blocking=True)
                 evt = torch.cuda.Event()
                 evt.record(self._prefetch_stream)
-                self._prefetch_events[slot] = evt
+                self._prefetch_events[allocated_slot] = evt
 
     def run_layer(
         self,
