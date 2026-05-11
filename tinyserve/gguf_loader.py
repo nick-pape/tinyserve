@@ -455,6 +455,18 @@ def load_from_gguf(
         logger.info("Multimodal model detected, using text_config for model creation")
         hf_config = effective_config
 
+    # Honor caller's attn_implementation. The HF safetensors path threads this
+    # through AutoModelForCausalLM.from_pretrained(attn_implementation=...);
+    # the GGUF path constructs the model directly from config so we have to
+    # set it on the config itself. Without this, models default to SDPA and
+    # tinyserve's registered SDPA (which drops gpt-oss sinks) or the standard
+    # SDPA (which crashes on non-contiguous masks for some Qwen layouts) runs
+    # instead of the safe eager path.
+    attn_impl = kwargs.get("attn_implementation")
+    if attn_impl is not None:
+        hf_config._attn_implementation = str(getattr(attn_impl, "value", attn_impl))
+        logger.info("Honoring attn_implementation=%s for GGUF path", hf_config._attn_implementation)
+
     # Try specific model class for known multimodal architectures
     model_type = getattr(hf_config, "model_type", "")
     with init_empty_weights():
