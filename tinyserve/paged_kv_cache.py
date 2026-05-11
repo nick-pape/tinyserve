@@ -130,8 +130,25 @@ class PagedRequestKVCache:
     def __init__(self, pool: PagedKVPool):
         self.pool = pool
         self.page_ids: list[int] = []
-        self.seq_len = 0
+        # Per-layer sequence lengths. transformers 5.x's cache contract calls
+        # update() once per layer within a single model.forward(). A single
+        # global counter would advance with every layer call inside one
+        # forward pass, causing layer N to write to position N*new_tokens
+        # instead of [0:new_tokens]. The KV reads then return a tensor with
+        # k_len = (num_layers-layer_idx) * new_tokens of mostly-zero data,
+        # which mismatches the attention mask. Mirror StaticKVCache's
+        # per-layer _seq_lens[] design (see static_kv_cache.py:78).
+        self._seq_lens: list[int] = [0] * pool.num_layers
         self.is_sliding = [False] * pool.num_layers
+
+    @property
+    def seq_len(self) -> int:
+        """Backwards-compat read for any code path that wants a single number.
+
+        Returns the max across layers — in steady state all layers are in
+        lockstep, so this matches what the old global `seq_len` would have been.
+        """
+        return max(self._seq_lens) if self._seq_lens else 0
 
     def _pages_needed(self, seq_len: int) -> int:
         return (seq_len + PAGE_SIZE - 1) // PAGE_SIZE
@@ -146,23 +163,25 @@ class PagedRequestKVCache:
             cache_kwargs: dict with optional 'cache_position'
 
         Returns:
-            (k_out, v_out) covering all tokens so far.
+            (k_out, v_out) covering all tokens so far for THIS layer.
         """
         new_tokens = key_states.shape[2]
 
         if cache_kwargs and "cache_position" in cache_kwargs:
             pos = cache_kwargs["cache_position"]
-            start = pos[0].item()
+            start = pos[0].item() if hasattr(pos, "item") else int(pos[0])
         else:
-            start = self.seq_len
+            start = self._seq_lens[layer_idx]
 
         end = start + new_tokens
-        pages_needed = self._pages_needed(end)
 
+        # Page allocation is shared across layers (the pool stores all layers
+        # in the same page tensor). Allocate based on the max we'll need.
+        pages_needed = self._pages_needed(end)
         while len(self.page_ids) < pages_needed:
             self.page_ids.append(self.pool.allocate_page())
 
-        # Write tokens into pages
+        # Write tokens into pages for THIS layer at [start:end].
         written = 0
         pos_cursor = start
         while written < new_tokens:
@@ -179,21 +198,21 @@ class PagedRequestKVCache:
             written += can_write
             pos_cursor += can_write
 
-        self.seq_len = max(self.seq_len, end)
+        self._seq_lens[layer_idx] = end
 
-        k_out = self.pool.read(self.page_ids, layer_idx, 0, self.seq_len)
-        v_out = self.pool.read(self.page_ids, layer_idx, 1, self.seq_len)
+        k_out = self.pool.read(self.page_ids, layer_idx, 0, end)
+        v_out = self.pool.read(self.page_ids, layer_idx, 1, end)
         return k_out, v_out
 
     def get_seq_length(self, layer_idx=0):
-        return self.seq_len
+        return self._seq_lens[layer_idx]
 
     def get_max_cache_shape(self):
         return None
 
     def get_mask_sizes(self, cache_position=None, layer_idx=0):
         # transformers 5.x can pass an int here; duck-type so both work.
-        cur = self.seq_len
+        cur = self._seq_lens[layer_idx]
         def _len(x):
             return x.shape[0] if hasattr(x, "shape") else int(x)
         if cur == 0 and cache_position is not None:
@@ -203,11 +222,11 @@ class PagedRequestKVCache:
         return cur, 0
 
     def is_initialized(self, layer_idx=0):
-        return self.seq_len > 0
+        return self._seq_lens[layer_idx] > 0
 
     def has_previous_state(self, layer_idx=0):
         # transformers 5.x qwen3_5_moe linear-attn path calls this.
-        return self.seq_len > 0
+        return self._seq_lens[layer_idx] > 0
 
     @staticmethod
     def is_compileable():
@@ -225,9 +244,13 @@ class PagedRequestKVCache:
         pass
 
     def crop(self, max_length):
-        if self.seq_len > max_length:
-            self.seq_len = max_length
-            new_pages = self._pages_needed(max_length)
+        any_change = False
+        for i in range(len(self._seq_lens)):
+            if self._seq_lens[i] > max_length:
+                self._seq_lens[i] = max_length
+                any_change = True
+        if any_change:
+            new_pages = self._pages_needed(max(self._seq_lens) if self._seq_lens else 0)
             while len(self.page_ids) > new_pages:
                 self.pool.free_page(self.page_ids.pop())
 
@@ -248,30 +271,32 @@ class PagedRequestKVCache:
 
     def reset(self):
         self.free()
-        self.seq_len = 0
 
     def free(self):
         for pid in self.page_ids:
             self.pool.free_page(pid)
         self.page_ids.clear()
-        self.seq_len = 0
+        for i in range(len(self._seq_lens)):
+            self._seq_lens[i] = 0
 
     def __len__(self):
         return self.pool.num_layers
 
     def __iter__(self):
         for i in range(self.pool.num_layers):
-            k = self.pool.read(self.page_ids, i, 0, self.seq_len)
-            v = self.pool.read(self.page_ids, i, 1, self.seq_len)
+            n = self._seq_lens[i]
+            k = self.pool.read(self.page_ids, i, 0, n)
+            v = self.pool.read(self.page_ids, i, 1, n)
             yield (k, v)
 
     def __getitem__(self, idx):
-        k = self.pool.read(self.page_ids, idx, 0, self.seq_len)
-        v = self.pool.read(self.page_ids, idx, 1, self.seq_len)
+        n = self._seq_lens[idx]
+        k = self.pool.read(self.page_ids, idx, 0, n)
+        v = self.pool.read(self.page_ids, idx, 1, n)
         return (k, v)
 
     def __contains__(self, item):
         return False
 
     def __bool__(self):
-        return self.seq_len > 0
+        return any(s > 0 for s in self._seq_lens)
