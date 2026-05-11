@@ -192,14 +192,21 @@ class PagedRequestKVCache:
         return None
 
     def get_mask_sizes(self, cache_position=None, layer_idx=0):
+        # transformers 5.x can pass an int here; duck-type so both work.
         cur = self.seq_len
+        def _len(x):
+            return x.shape[0] if hasattr(x, "shape") else int(x)
         if cur == 0 and cache_position is not None:
-            return cache_position.shape[0], 0
+            return _len(cache_position), 0
         if cache_position is not None:
-            return cur + cache_position.shape[0], 0
+            return cur + _len(cache_position), 0
         return cur, 0
 
     def is_initialized(self, layer_idx=0):
+        return self.seq_len > 0
+
+    def has_previous_state(self, layer_idx=0):
+        # transformers 5.x qwen3_5_moe linear-attn path calls this.
         return self.seq_len > 0
 
     @staticmethod

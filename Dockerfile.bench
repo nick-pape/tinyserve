@@ -1,0 +1,28 @@
+FROM nvidia/cuda:12.8.0-devel-ubuntu24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3.12 python3-pip python3-dev build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY third_party/ ./third_party/
+COPY pyproject.toml README.md LICENSE build_ggml.py ./
+COPY tinyserve/ ./tinyserve/
+
+RUN pip install --no-cache-dir --break-system-packages ".[server,gpu,progress]"
+
+# Stock install pulls torch 2.11+cu13 — requires NVIDIA driver 580+.
+# Host runs driver 570 / CUDA 12.8, so override to the cu128 wheel.
+RUN pip install --no-cache-dir --break-system-packages --upgrade \
+        --index-url https://download.pytorch.org/whl/cu128 torch
+
+# accelerate is required by load_and_offload / load_from_gguf but not declared in pyproject.
+RUN pip install --no-cache-dir --break-system-packages accelerate
+
+ENV HF_HOME=/cache/hf-shared
+ENV TORCHINDUCTOR_CACHE_DIR=/cache/tinyserve-inductor
+
+EXPOSE 8000
