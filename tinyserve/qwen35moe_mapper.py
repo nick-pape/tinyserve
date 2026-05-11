@@ -193,28 +193,47 @@ def apply_vhead_transform(
         return inverse_vhead_reorder(tensor, num_k_heads, num_v_heads, dim=1)
 
     if mode == "v_portion":
-        # Fused QKV: [q_dim + k_dim + v_dim, hidden] — only V rows need reorder.
-        # conv1d has a different shape but is also treated as "only V portion".
-        q_dim = num_q_heads * q_head_dim
-        k_dim = num_k_heads * k_head_dim
+        # Fused [Q | K | V] channels. In Qwen3.5MoE's GatedDeltaNet, Q heads use
+        # the *linear-attn key* head_dim (k_head_dim), NOT the main-attention
+        # head_dim — that's a property of the linear-attention block, not the
+        # global model config. For Qwen3.6 (Pro 4500 hardware, 2026-05-11)
+        # main attn head_dim is 256 but linear-attn key head_dim is 128, so
+        # the old formula `q_dim = num_q_heads * q_head_dim` over-counted Q by
+        # 4096 and the channel dim never matched any tensor axis.
+        qk_dim_each = num_k_heads * k_head_dim  # Q == K dim in GatedDeltaNet
         v_dim = num_v_heads * v_head_dim
+        total_channels = 2 * qk_dim_each + v_dim
+        non_v_dim = 2 * qk_dim_each
 
-        total_rows = tensor.shape[0]
-        non_v_rows = total_rows - v_dim
-
-        non_v_part = tensor[:non_v_rows]
-        v_part = tensor[non_v_rows:]
-
-        if v_part.shape[0] != v_dim:
+        # The channel axis isn't always dim 0: attn_qkv.weight stores channels
+        # on dim 0, but ssm_conv1d.weight in GGUF stores them on a later axis
+        # (the kernel_size dim ends up first). Locate the channel axis by
+        # matching the expected total, then move it to the front for the
+        # slice + reorder, then move it back.
+        channel_axis = next(
+            (i for i, s in enumerate(tensor.shape) if s == total_channels),
+            None,
+        )
+        if channel_axis is None:
             logger.warning(
-                "V-portion size mismatch: expected %d V rows but got %d (total %d). "
-                "Skipping V-head reorder.",
-                v_dim, v_part.shape[0], total_rows,
+                "V-portion size mismatch: expected channel axis of size %d (=2*%d K-shaped + %d V) "
+                "in tensor of shape %s. Skipping V-head reorder.",
+                total_channels, qk_dim_each, v_dim, list(tensor.shape),
             )
             return tensor
 
+        moved = channel_axis != 0
+        if moved:
+            tensor = tensor.transpose(0, channel_axis).contiguous()
+
+        non_v_part = tensor[:non_v_dim]
+        v_part = tensor[non_v_dim:]
         v_part = inverse_vhead_reorder(v_part, num_k_heads, num_v_heads, dim=0)
-        return torch.cat([non_v_part, v_part], dim=0)
+        result = torch.cat([non_v_part, v_part], dim=0)
+
+        if moved:
+            result = result.transpose(0, channel_axis).contiguous()
+        return result
 
     raise ValueError(f"Unknown vhead reorder mode: {mode!r}")
 
