@@ -504,6 +504,18 @@ def main():
         "--streaming-window-size", type=int, default=1024, help="StreamingLLM window tokens (default: 1024)"
     )
     parser.add_argument("--gguf", default=None, help="Path to local GGUF file (uses gguf_loader.load_from_gguf instead of HF download)")
+    parser.add_argument(
+        "--attn-implementation",
+        default="eager",
+        choices=["eager", "sdpa", "flex", "flashinfer", "flash_attention_2"],
+        help=(
+            "Attention backend. Default 'eager' uses transformers' built-in attention, which "
+            "correctly handles model-specific kwargs like gpt-oss's s_aux=self.sinks. "
+            "Tinyserve's registered 'sdpa' silently drops s_aux (sinks) — DO NOT use 'sdpa' "
+            "for gpt-oss models without verifying output coherence. Use 'flex' for sinks-aware "
+            "compiled attention, or 'flash_attention_2' if flash_attn is installed."
+        ),
+    )
     args = parser.parse_args()
 
     from transformers import AutoTokenizer
@@ -515,8 +527,14 @@ def main():
         from .gguf_loader import load_from_gguf
         logger.info("Loading from GGUF: %s", args.gguf)
         # load_from_gguf doesn't accept streaming/kv_dtype/gpu_memory_utilization kwargs;
-        # only forward cache_capacity to avoid TypeError from offload_model.
-        model = load_from_gguf(args.gguf, model_id=args.model, cache_capacity=args.cache_capacity)
+        # forward only what offload_model accepts. attn_implementation must flow through
+        # so the eager (or flex) path is used instead of the registered sinks-less SDPA.
+        model = load_from_gguf(
+            args.gguf,
+            model_id=args.model,
+            cache_capacity=args.cache_capacity,
+            attn_implementation=args.attn_implementation,
+        )
     else:
         cfg = TinyserveConfig(
             cache_capacity=args.cache_capacity,
@@ -527,6 +545,7 @@ def main():
             streaming=args.streaming,
             streaming_sink_size=args.streaming_sink_size,
             streaming_window_size=args.streaming_window_size,
+            attn_implementation=args.attn_implementation,
         )
         model = load_and_offload(args.model, offload_config=cfg)
     tokenizer = AutoTokenizer.from_pretrained(args.model)
