@@ -222,18 +222,19 @@ def apply_vhead_transform(
             )
             return tensor
 
-        moved = channel_axis != 0
-        if moved:
+        if channel_axis != 0:
+            # Bring channels to dim 0 for slicing. We DON'T transpose back at
+            # the end: the downstream gguf_loader reshape to the HF param
+            # shape (e.g. conv1d (channels, 1, kernel_size)) only produces
+            # correct element layout when channels are already at dim 0.
+            # For the QKV weight (channel_axis=0) this branch is skipped so
+            # the original (channels, hidden) layout is preserved.
             tensor = tensor.transpose(0, channel_axis).contiguous()
 
         non_v_part = tensor[:non_v_dim]
         v_part = tensor[non_v_dim:]
         v_part = inverse_vhead_reorder(v_part, num_k_heads, num_v_heads, dim=0)
-        result = torch.cat([non_v_part, v_part], dim=0)
-
-        if moved:
-            result = result.transpose(0, channel_axis).contiguous()
-        return result
+        return torch.cat([non_v_part, v_part], dim=0)
 
     raise ValueError(f"Unknown vhead reorder mode: {mode!r}")
 
