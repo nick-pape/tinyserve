@@ -20,7 +20,9 @@ RUN pip install --no-cache-dir --break-system-packages --upgrade \
         --index-url https://download.pytorch.org/whl/cu128 torch
 
 # accelerate is required by load_and_offload / load_from_gguf but not declared in pyproject.
-RUN pip install --no-cache-dir --break-system-packages accelerate
+# kernels is required for transformers MXFP4 dequant (gpt-oss family) — without it
+# transformers silently falls back to BF16, blowing up VRAM ~4×.
+RUN pip install --no-cache-dir --break-system-packages accelerate "kernels>=0.12.0"
 
 ENV HF_HOME=/cache/hf-shared
 ENV TORCHINDUCTOR_CACHE_DIR=/cache/tinyserve-inductor
