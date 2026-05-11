@@ -140,6 +140,18 @@ class PagedRequestKVCache:
         # per-layer _seq_lens[] design (see static_kv_cache.py:78).
         self._seq_lens: list[int] = [0] * pool.num_layers
         self.is_sliding = [False] * pool.num_layers
+        # DeltaNet (linear-attention) state per layer. Hybrid models like
+        # Qwen3.5MoE alternate transformer attention layers (use KV cache)
+        # with GatedDeltaNet layers (use conv_state + recurrent_state). The
+        # DeltaNet path doesn't go through update(); it calls update_conv_state
+        # and update_recurrent_state, and reads via self.layers[i].conv_states
+        # and .recurrent_states. We keep one slot per layer; for transformer
+        # layers these stay None and are ignored.
+        from types import SimpleNamespace
+        self.layers = [
+            SimpleNamespace(conv_states=None, recurrent_states=None)
+            for _ in range(pool.num_layers)
+        ]
 
     @property
     def seq_len(self) -> int:
@@ -225,8 +237,31 @@ class PagedRequestKVCache:
         return self._seq_lens[layer_idx] > 0
 
     def has_previous_state(self, layer_idx=0):
-        # transformers 5.x qwen3_5_moe linear-attn path calls this.
-        return self._seq_lens[layer_idx] > 0
+        # transformers 5.x qwen3_5_moe linear-attn path calls this. In hybrid
+        # models, transformer-attn layers track progress via _seq_lens (set in
+        # update()), DeltaNet layers track progress via conv/recurrent state
+        # (set via update_conv_state / update_recurrent_state). Either signal
+        # indicates the layer has been processed at least once.
+        return (
+            self._seq_lens[layer_idx] > 0
+            or self.layers[layer_idx].conv_states is not None
+            or self.layers[layer_idx].recurrent_states is not None
+        )
+
+    def update_conv_state(self, conv_state, layer_idx):
+        """DeltaNet conv state setter. Called by Qwen3_5MoeGatedDeltaNet.forward
+        (transformers/models/qwen3_5_moe/modeling_qwen3_5_moe.py:473).
+
+        Stores a reference: the caller's causal_conv1d_update mutates the same
+        tensor in-place across decode steps, so persisting the reference is
+        sufficient and avoids re-allocation per token.
+        """
+        self.layers[layer_idx].conv_states = conv_state
+
+    def update_recurrent_state(self, recurrent_state, layer_idx):
+        """DeltaNet recurrent state setter. Called after recurrent_gated_delta_rule
+        (qwen3_5_moe modeling, line 535)."""
+        self.layers[layer_idx].recurrent_states = recurrent_state
 
     @staticmethod
     def is_compileable():
@@ -278,6 +313,9 @@ class PagedRequestKVCache:
         self.page_ids.clear()
         for i in range(len(self._seq_lens)):
             self._seq_lens[i] = 0
+        for layer in self.layers:
+            layer.conv_states = None
+            layer.recurrent_states = None
 
     def __len__(self):
         return self.pool.num_layers
