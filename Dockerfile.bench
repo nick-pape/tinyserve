@@ -30,8 +30,18 @@ RUN pip install --no-cache-dir --break-system-packages accelerate "kernels>=0.12
 #    Falling back to torch implementation."
 # and chunk_gated_delta_rule / causal_conv1d_update run in pure PyTorch — ~50-100× slower,
 # dominating decode time (we measured 0.10 tok/s on a 40-layer Qwen3.6 model with the fallback).
+#
+# flash-linear-attention is pure-Python (Triton JIT) so installs easily.
+# causal-conv1d compiles CUDA kernels from source: use --no-build-isolation so it
+# picks up our cu128 torch (otherwise pip's isolated build env pulls a fresh cu13
+# torch and the CUDA-version check fails: system has 12.8, isolated has 13.0).
+# TORCH_CUDA_ARCH_LIST="12.0" targets Blackwell sm_120 specifically.
 RUN pip install --no-cache-dir --break-system-packages \
-        flash-linear-attention causal-conv1d
+        ninja packaging setuptools wheel \
+    && pip install --no-cache-dir --break-system-packages flash-linear-attention \
+    && TORCH_CUDA_ARCH_LIST="12.0" \
+       pip install --no-cache-dir --break-system-packages --no-build-isolation \
+           causal-conv1d
 
 ENV HF_HOME=/cache/hf-shared
 ENV TORCHINDUCTOR_CACHE_DIR=/cache/tinyserve-inductor
