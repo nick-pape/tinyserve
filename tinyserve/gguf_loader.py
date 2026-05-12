@@ -619,13 +619,22 @@ def load_from_gguf(
             elif vhead_mode == "a_log":
                 pass  # Handled below in the dequant path (1D tensor)
 
-        # Linear layers with 2D weight and quantized type: keep native quant
+        # Linear layers with 2D weight and quantized type: keep native quant.
+        # EXCEPT vhead_mode == "out_proj", which needs a COLUMN reorder that
+        # crosses quant block boundaries (Q4_K/Q6_K have 256-element blocks).
+        # The byte-level reorder branch above has a TODO marker and silently
+        # skips out_proj reorder — meaning ssm_out.weight (linear_attn.out_proj)
+        # on every DeltaNet layer was loaded without the column permutation
+        # llama.cpp applied during conversion. Forcing out_proj through the
+        # dequant path lets apply_vhead_transform's working column reorder
+        # actually run.
         is_linear_weight = (
             len(info.shape) == 2
             and info.ggml_type in (2, 3, 6, 7, 8, 10, 11, 12, 13, 14, 15)
             and hf_name.endswith(".weight")
             and not needs_norm_offset
             and "embed" not in hf_name
+            and vhead_mode != "out_proj"
         )
 
         if is_linear_weight:
