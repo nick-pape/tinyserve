@@ -24,6 +24,15 @@ RUN pip install --no-cache-dir --break-system-packages --upgrade \
 # transformers silently falls back to BF16, blowing up VRAM ~4×.
 RUN pip install --no-cache-dir --break-system-packages accelerate "kernels>=0.12.0"
 
+# flash-linear-attention + causal-conv1d are required for Qwen3.5MoE / Qwen3.6 GatedDeltaNet
+# to use fused CUDA kernels. Without them transformers logs
+#   "The fast path is not available because one of the required library is not installed.
+#    Falling back to torch implementation."
+# and chunk_gated_delta_rule / causal_conv1d_update run in pure PyTorch — ~50-100× slower,
+# dominating decode time (we measured 0.10 tok/s on a 40-layer Qwen3.6 model with the fallback).
+RUN pip install --no-cache-dir --break-system-packages \
+        flash-linear-attention causal-conv1d
+
 ENV HF_HOME=/cache/hf-shared
 ENV TORCHINDUCTOR_CACHE_DIR=/cache/tinyserve-inductor
 
