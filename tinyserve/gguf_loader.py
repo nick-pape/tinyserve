@@ -592,7 +592,20 @@ def load_from_gguf(
 
         # V-head reorder: permute rows of raw quantized bytes (no dequant needed).
         # Each row is a contiguous byte range, so row permutation = byte chunk reorder.
-        if vhead_mode is not None and _apply_vhead is not None and len(info.shape) == 2:
+        # Restricted to quantized 2D tensors that take the native-quant path; small
+        # F32/F16 2D tensors (e.g. in_proj_a, in_proj_b) go through the dequant
+        # branch instead, where apply_vhead_transform runs on the HF-shaped tensor.
+        # Without this restriction those small tensors got byte-reordered here AND
+        # tensor-reordered in apply_vhead — two compositions of the same inversion
+        # cancel to identity, leaving them in tiled (GGUF) order instead of
+        # grouped (HF) order.
+        _quantized_types = {2, 3, 6, 7, 8, 10, 11, 12, 13, 14, 15}
+        if (
+            vhead_mode is not None
+            and _apply_vhead is not None
+            and len(info.shape) == 2
+            and info.ggml_type in _quantized_types
+        ):
             from .qwen35moe_mapper import inverse_vhead_reorder_bytes
             from .gguf_reader import GGML_TYPES
             _, bpb, bs = GGML_TYPES[info.ggml_type]
@@ -661,7 +674,20 @@ def load_from_gguf(
             if needs_norm_offset:
                 tensor = tensor - 1.0
 
-            # Apply V-head transform for 1D tensors (A_log, dt_bias)
+            tensor = tensor.to(device)
+
+            # Transpose 2D weights to HF shape BEFORE applying the V-head transform.
+            # GGUF reports info.shape as (in_features, out_features) (ne[0]=cols),
+            # so the dequanted tensor's dim 0 is HF's in_features and dim 1 is HF's
+            # out_features. apply_vhead_transform's dim arguments refer to HF
+            # semantics (out_features for "full", in_features for "out_proj").
+            # If we apply v-head BEFORE the transpose, the dim arguments hit the
+            # opposite HF axis and the permutation is on the wrong dimension —
+            # silently producing wrong weights with no shape error.
+            if tensor.shape != param.shape:
+                if tensor.dim() == 2 and param.dim() == 2 and tensor.shape == param.shape[::-1]:
+                    tensor = tensor.T.contiguous()
+
             if vhead_mode is not None and _apply_vhead is not None:
                 tensor = _apply_vhead(
                     tensor,
@@ -674,13 +700,11 @@ def load_from_gguf(
                     q_head_dim=_q_head_dim,
                 )
 
-            tensor = tensor.to(device)
-
+            # Final shape adapter for cases not handled by the transpose above
+            # (3D conv1d gets reshaped here; the v_portion transform already
+            # produced a shape whose row-major flatten matches param.shape).
             if tensor.shape != param.shape:
-                # GGUF often stores 2D weights transposed relative to HF
-                if tensor.dim() == 2 and param.dim() == 2 and tensor.shape == param.shape[::-1]:
-                    tensor = tensor.T.contiguous()
-                elif tensor.numel() == param.numel():
+                if tensor.numel() == param.numel():
                     tensor = tensor.reshape(param.shape)
                 else:
                     logger.warning("Shape mismatch for %s: GGUF %s vs model %s", hf_name, tensor.shape, param.shape)
