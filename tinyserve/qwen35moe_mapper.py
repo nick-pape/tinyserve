@@ -4,7 +4,10 @@ Derived from llama.cpp PR #19468 (convert_hf_to_gguf.py, Qwen3_5MoeTextModel).
 This module inverts those transforms to load GGUF weights into the HF model.
 
 Key transforms to invert:
-- Norm weights: GGUF has (w - 1), HF expects w → add 1 back (except linear_attn.norm)
+- Norm weights: convert_hf_to_gguf.py does `data_torch = data_torch + 1` for every
+  *.norm.weight EXCEPT linear_attn.norm.weight, so GGUF stores `w_hf + 1`. To recover
+  the HF weight we SUBTRACT 1. (HF's Qwen3_5MoeRMSNorm.forward then computes
+  `(1.0 + self.weight) * normalize(x)` so the effective scale stays `w_hf + 1`.)
 - V-head reorder: GGUF uses tiled order, HF uses grouped → reorder back
 - A_log: GGUF has -exp(A_log), HF expects A_log → take -log(-x)
 - QKV: GGUF has fused attn_qkv, HF expects separate or fused in_proj_qkv
