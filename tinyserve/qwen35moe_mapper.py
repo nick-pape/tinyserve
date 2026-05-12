@@ -186,7 +186,14 @@ def apply_vhead_transform(
         q_head_dim: head_dim for Q heads (= hidden_size // num_attention_heads)
     """
     if mode == "a_log":
-        # GGUF stores -exp(A_log), HF expects A_log = log(-gguf_value)
+        # llama.cpp convert_hf_to_gguf.py applies TWO transforms to A_log:
+        #   1. Qwen3NextModel.modify_tensors:           data_torch = -torch.exp(data_torch)
+        #   2. _LinearAttentionVReorderBase (override): V-head reorder (1D, head_dim=1)
+        # So GGUF stores reorder(-exp(A_log)). Inversion is: inverse-reorder, THEN
+        # log(-x). The original tinyserve mapper applied only the log inverse,
+        # leaving every DeltaNet layer's A_log permuted in tiled order — wrong
+        # per-head decay constants → corrupted recurrent state.
+        tensor = inverse_vhead_reorder(tensor.unsqueeze(-1), num_k_heads, num_v_heads, dim=0).squeeze(-1)
         return torch.log(torch.abs(tensor) + 1e-10)
 
     if mode == "full":
