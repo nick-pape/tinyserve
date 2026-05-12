@@ -641,9 +641,16 @@ def load_from_gguf(
             except (ImportError, ValueError):
                 tensor = _dequant_tensor(reader, info, gguf_name, device).cpu().to(torch.bfloat16)
 
-            # Apply norm +1 offset (GGUF stores w-1, HF expects w)
+            # Invert llama.cpp convert_hf_to_gguf's `data_torch = data_torch + 1`
+            # for Qwen3_5MoeTextModel norm tensors (every norm.weight EXCEPT
+            # linear_attn.norm.weight). GGUF stores w_hf + 1, so to recover the
+            # HF weight we subtract 1. The original tinyserve mapper had this
+            # inverted (it ADDED 1), giving w_hf + 2 — RMSNorm then scaled
+            # activations by ~3× per layer, blowing up through 40 layers and
+            # producing saturated, deterministic-garbage logits regardless of
+            # any v-head reorder state.
             if needs_norm_offset:
-                tensor = tensor + 1.0
+                tensor = tensor - 1.0
 
             # Apply V-head transform for 1D tensors (A_log, dt_bias)
             if vhead_mode is not None and _apply_vhead is not None:
